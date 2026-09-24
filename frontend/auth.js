@@ -1,2 +1,4 @@
+async function checkSession() { const res = await fetch('/api/me'); if (res.ok) location.href = '/app/'; }
+checkSession();
 async function submitForm(event, path){event.preventDefault();const form=event.currentTarget;const message=document.querySelector('#message');const data=Object.fromEntries(new FormData(form));const response=await fetch('/api/auth/'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});const result=await response.json();if(!response.ok){message.textContent=result.error;return}location.href='/app/'}
 document.querySelector('#login')?.addEventListener('submit',event=>submitForm(event,'login'));document.querySelector('#signup')?.addEventListener('submit',event=>submitForm(event,'signup'));
