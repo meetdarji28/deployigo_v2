@@ -1,0 +1,13 @@
+{
+  "name": "deployigo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local-first Deployigo deployment platform MVP",
+  "scripts": {
+    "start": "node backend/src/server.js",
+    "dev": "node backend/src/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
