@@ -72,6 +72,7 @@ button:active,.button:active,.nav-btn:active,.tab-btn:active,.sidebar-link:activ
 .menu-dropdown button:active{background:var(--acid);transform:translateX(4px);transition:transform 0.08s ease}
 
 /* Progress Modal Styling */
+#progress-modal{z-index:2000!important}
 .progress-card{text-align:center;max-width:480px}
 .progress-container{margin:24px 0 12px;background:#e5e2d8;border-radius:20px;height:14px;overflow:hidden;border:1px solid var(--line);position:relative}
 .progress-bar{background:linear-gradient(90deg,var(--orange),#ff9d00);height:100%;width:0%;transition:width 0.2s linear;border-radius:20px}
@@ -107,6 +108,7 @@ button:active,.button:active,.nav-btn:active,.tab-btn:active,.sidebar-link:activ
 /* Drag and Drop Zone Overlay */
 .file-manager.drag-over{border:2px dashed var(--orange);background:#fffef5}
 .drag-overlay{position:absolute;inset:0;background:rgba(255,253,247,0.92);backdrop-filter:blur(3px);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;border:2px dashed var(--orange);border-radius:6px;pointer-events:none}
+.drag-overlay[hidden]{display:none!important}
 .drag-overlay h3{margin:8px 0 4px;font-size:20px;color:var(--ink)}
 .drag-overlay p{font:12px 'DM Mono',monospace;color:#68716a}
 

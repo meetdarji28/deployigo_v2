@@ -57,8 +57,48 @@ function sanitizePhpSettings(input = {}) {
   return current;
 }
 
+const DEFAULT_PHP_MODULES = {
+  pdo_mysql: true,
+  mysqli: true,
+  pdo_pgsql: false,
+  pgsql: false,
+  mongodb: false,
+  pdo_sqlite: true,
+  redis: false,
+  memcached: false,
+  imagick: false,
+  gd: true,
+  curl: true,
+  mbstring: true,
+  zip: true,
+  intl: false,
+  bcmath: true,
+  xml: true,
+  opcache: true,
+  soap: false,
+  sockets: false,
+  exif: true,
+  fileinfo: true
+};
+
+const PHP_ALLOWED_EXTENSIONS = Object.keys(DEFAULT_PHP_MODULES);
+
+function sanitizePhpModules(input = {}, existing = {}) {
+  const current = { ...DEFAULT_PHP_MODULES, ...existing };
+  for (const ext of PHP_ALLOWED_EXTENSIONS) {
+    if (typeof input[ext] === 'boolean') {
+      current[ext] = input[ext];
+    } else if (input[ext] === 'true' || input[ext] === '1') {
+      current[ext] = true;
+    } else if (input[ext] === 'false' || input[ext] === '0') {
+      current[ext] = false;
+    }
+  }
+  return current;
+}
+
 function entryPoint(project) { if (!project.deployPath) return null; for (const item of ['index.html', 'index.php', 'public/index.php', 'public/index.html']) if (fs.existsSync(path.join(project.deployPath, item))) return item; return null; }
-function readDb() { const db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); let changed = false; for (const project of db.projects) { if (project.deploymentMode === 'mock' || (project.url?.startsWith('https://') && project.status === 'staging')) { project.status = 'local'; project.url = `http://localhost:${PORT}/local/${project.name}/`; project.deploymentMode = 'local-preview'; changed = true; } if (project.deployPath && !project.entryPoint) { project.entryPoint = entryPoint(project); project.previewStatus = project.entryPoint ? 'available' : 'no-entry-point'; changed = true; } if (project.enabled === undefined) { project.enabled = true; changed = true; } if (project.maintenance === undefined) { project.maintenance = false; changed = true; } if (!project.deployTarget) { project.deployTarget = process.env.DEPLOY_TARGET || 'local-preview'; changed = true; } if (!project.phpVersion) { project.phpVersion = '8.5'; changed = true; } if (!project.phpSettings) { project.phpSettings = { ...DEFAULT_PHP_SETTINGS }; changed = true; } } if (changed) writeDb(db); return db; }
+function readDb() { const db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); let changed = false; for (const project of db.projects) { if (project.deploymentMode === 'mock' || (project.url?.startsWith('https://') && project.status === 'staging')) { project.status = 'local'; project.url = `http://localhost:${PORT}/local/${project.name}/`; project.deploymentMode = 'local-preview'; changed = true; } if (project.deployPath && !project.entryPoint) { project.entryPoint = entryPoint(project); project.previewStatus = project.entryPoint ? 'available' : 'no-entry-point'; changed = true; } if (project.enabled === undefined) { project.enabled = true; changed = true; } if (project.maintenance === undefined) { project.maintenance = false; changed = true; } if (!project.deployTarget) { project.deployTarget = process.env.DEPLOY_TARGET || 'local-preview'; changed = true; } if (!project.phpVersion) { project.phpVersion = '8.5'; changed = true; } if (!project.phpSettings) { project.phpSettings = { ...DEFAULT_PHP_SETTINGS }; changed = true; } if (!project.phpModules) { project.phpModules = sanitizePhpModules({}); changed = true; } else { const merged = sanitizePhpModules(project.phpModules, project.phpModules); if (JSON.stringify(merged) !== JSON.stringify(project.phpModules)) { project.phpModules = merged; changed = true; } } } if (changed) writeDb(db); return db; }
 function cookies(req) { return Object.fromEntries((req.headers.cookie || '').split(';').filter(Boolean).map(item => { const [key, ...value] = item.trim().split('='); return [key, decodeURIComponent(value.join('='))]; })); }
 function currentUser(req, db) { const session = db.sessions[cookies(req).deployigo_session]; if (!session || session.expiresAt < Date.now()) return null; return db.users.find(user => user.id === session.userId) || null; }
 function readJson(req) { return new Promise((resolve, reject) => { let raw = ''; req.on('data', chunk => { raw += chunk; if (raw.length > 2e6) req.destroy(); }); req.on('end', () => { try { resolve(raw ? JSON.parse(raw) : {}); } catch { reject(new Error('Invalid JSON')); } }); req.on('error', reject); }); }
@@ -68,11 +108,70 @@ function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
 function validPassword(password, stored) { const [salt, hash] = stored.split(':'); return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), crypto.scryptSync(password, salt, 64)); }
 function sessionCookie(value) { return `deployigo_session=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL / 1000}`; }
 function createSession(db, userId) { for (const key of Object.keys(db.sessions)) if (db.sessions[key].userId === userId) delete db.sessions[key]; const value = id('sess'); db.sessions[value] = { userId, expiresAt: Date.now() + SESSION_TTL }; return value; }
-function localProject(project) { project.status = 'remote'; project.enabled = true; project.deploymentMode = 'remote-docker'; project.deployTarget = process.env.DEPLOY_TARGET || 'remote-docker'; project.deployedAt = new Date().toISOString(); project.phpSettings = { ...DEFAULT_PHP_SETTINGS }; return project; }
 function updateAsync(projectId, callback) { callback().then(() => {}).catch(error => { const db = readDb(); const project = db.projects.find(item => item.id === projectId); if (project) { project.sourceStatus = 'error'; project.sourceError = error.message; writeDb(db); } }); }
+
+async function createBlankProject(project) {
+  const dir = path.join(DATA_DIR, 'projects', project.id);
+  fs.mkdirSync(dir, { recursive: true });
+  const indexPhpPath = path.join(dir, 'index.php');
+  if (!fs.existsSync(indexPhpPath)) {
+    fs.writeFileSync(indexPhpPath, `<?php
+phpinfo();
+?>`);
+  }
+  project.deployPath = dir;
+  project.entryPoint = 'index.php';
+  project.previewStatus = 'available';
+  project.sourceStatus = 'ready';
+}
 
 async function deployRemoteProject(project) { if (project.deployTarget !== 'remote-docker' || !project.deployPath) return; const host = project.remoteHost || process.env.DEPLOY_REMOTE_HOST || '192.168.1.167'; const user = project.remoteUser || process.env.DEPLOY_REMOTE_USER || 'root'; const remoteBase = process.env.DEPLOY_REMOTE_BASE || '/opt/deployigo/workspaces'; const port = Number(project.remotePort || 18080 + (parseInt(project.id.slice(-4), 16) % 100)); const remotePath = `${remoteBase}/default/${project.id}`; const container = `deployigo-${project.id}`; const sourceDir = fs.existsSync(project.deployPath) && fs.statSync(project.deployPath).isDirectory() ? project.deployPath : path.dirname(project.deployPath); await new Promise((resolve, reject) => { const tar = spawn('tar', ['--exclude=.deployigo-source.zip', '-C', sourceDir, '-cf', '-', '.']); const ssh = spawn('ssh', ['-o', 'BatchMode=yes', `${user}@${host}`, `rm -rf ${remotePath} && mkdir -p ${remotePath} && tar -xf - -C ${remotePath}`]); let error = ''; ssh.stderr.on('data', chunk => { error += chunk; }); tar.stdout.pipe(ssh.stdin); ssh.on('close', code => code === 0 ? resolve() : reject(new Error(error || `Remote source upload failed (${code}).`))); tar.on('error', reject); }); const version = project.phpVersion || '8.5'; const cfg = sanitizePhpSettings(project.phpSettings);
 
+
+  const modules = sanitizePhpModules(project.phpModules);
+  const extFlags = [];
+  const iniExtensions = [];
+  const userIniLines = [];
+  const extNames = {
+    pdo_mysql: 'pdo_mysql',
+    mysqli: 'mysqli',
+    pdo_pgsql: 'pdo_pgsql',
+    pgsql: 'pgsql',
+    mongodb: 'mongodb',
+    pdo_sqlite: 'pdo_sqlite',
+    redis: 'redis',
+    memcached: 'memcached',
+    imagick: 'imagick',
+    gd: 'gd',
+    curl: 'curl',
+    mbstring: 'mbstring',
+    zip: 'zip',
+    intl: 'intl',
+    bcmath: 'bcmath',
+    xml: 'xml',
+    opcache: 'opcache',
+    soap: 'soap',
+    sockets: 'sockets',
+    exif: 'exif',
+    fileinfo: 'fileinfo'
+  };
+  for (const [key, enabled] of Object.entries(modules)) {
+    if (enabled && extNames[key]) {
+      const extName = extNames[key];
+      if (extName === 'opcache') {
+        extFlags.push('-d zend_extension=opcache');
+        iniExtensions.push('@ini_set("zend_extension", "opcache");');
+        userIniLines.push('zend_extension=opcache');
+      } else {
+        extFlags.push(`-d extension=${extName}`);
+        iniExtensions.push(`@ini_set("extension", "${extName}");`);
+        userIniLines.push(`extension=${extName}`);
+      }
+    }
+  }
+  const extFlagString = extFlags.join(' ');
+  const iniExtensionCode = iniExtensions.join('\n');
+  const userIniExtensionString = userIniLines.join('\n');
 
   const userIniScript = `memory_limit = ${cfg.memory_limit}
 max_execution_time = ${cfg.max_execution_time}
@@ -82,8 +181,8 @@ display_errors = ${cfg.display_errors === 'On' ? 'On' : 'Off'}
 max_input_vars = ${cfg.max_input_vars}
 session.gc_maxlifetime = ${cfg.session_gc_maxlifetime}
 date.timezone = "${cfg.date_timezone}"
+${userIniExtensionString}
 `;
-
 
   const routerScript = `<?php
 $disabled = ${project.enabled === false ? 'true' : 'false'};
@@ -128,7 +227,42 @@ return false;
   const remoteUserIniPath = `${remotePath}/.user.ini`;
   const remoteRouterPath = `${remotePath}/.deployigo_router.php`;
   const phpFlags = `-d memory_limit=${cfg.memory_limit} -d upload_max_filesize=${cfg.upload_max_filesize} -d post_max_size=${cfg.post_max_size} -d display_errors=${cfg.display_errors === 'On' ? '1' : '0'} -d max_execution_time=${cfg.max_execution_time} -d max_input_vars=${cfg.max_input_vars} -d date.timezone=${cfg.date_timezone}`;
-  const sshCmd = `cat << 'EOF' > ${remoteUserIniPath}\n${userIniScript}\nEOF\ncat << 'EOF' > ${remoteRouterPath}\n${routerScript}\nEOF\ndocker rm -f ${container} >/dev/null 2>&1 || true; docker run -d --name ${container} --restart unless-stopped --memory=1g --cpus=1 --pids-limit=256 -p ${port}:8080 -v ${remotePath}:/var/www/html php:${version}-cli-alpine php ${phpFlags} -S 0.0.0.0:8080 -t /var/www/html /var/www/html/.deployigo_router.php`;
+  
+  const extInstallList = [];
+  const peclList = [];
+  for (const [key, enabled] of Object.entries(modules)) {
+    if (enabled) {
+      if (['pdo_mysql', 'mysqli', 'pdo_pgsql', 'pgsql', 'pdo_sqlite', 'gd', 'bcmath', 'intl', 'soap', 'sockets', 'exif', 'fileinfo', 'zip', 'opcache'].includes(key)) {
+        extInstallList.push(key);
+      } else if (['redis', 'mongodb', 'memcached', 'imagick'].includes(key)) {
+        peclList.push(key);
+      }
+    }
+  }
+
+  let dockerfileContent = `FROM php:${version}-cli-alpine\n`;
+  if (peclList.length > 0 || extInstallList.length > 0) {
+    dockerfileContent += `RUN apk add --no-cache $PHPIZE_DEPS postgresql-dev sqlite-dev libpng-dev libjpeg-turbo-dev freetype-dev libzip-dev icu-dev libxml2-dev imagemagick imagemagick-dev libmemcached-dev zlib-dev autoconf gcc g++ make linux-headers\n`;
+  }
+  // Install supported Alpine driver extensions cleanly
+  const allowedAlpineExts = ['pdo_mysql', 'mysqli', 'pdo_pgsql', 'pgsql', 'pdo_sqlite', 'gd', 'zip', 'bcmath'];
+  const buildableExts = extInstallList.filter(ext => allowedAlpineExts.includes(ext));
+  for (const ext of buildableExts) {
+    dockerfileContent += `RUN docker-php-ext-install ${ext}\n`;
+  }
+  for (const peclExt of peclList) {
+    dockerfileContent += `RUN pecl install ${peclExt}\nRUN docker-php-ext-enable ${peclExt}\n`;
+  }
+
+  const remoteDockerfile = `${remotePath}/Dockerfile`;
+  const imageName = `deployigo-img-${project.id}`;
+
+  const sshCmd = `cat << 'EOF' > ${remoteUserIniPath}\n${userIniScript}\nEOF
+cat << 'EOF' > ${remoteRouterPath}\n${routerScript}\nEOF
+cat << 'EOF' > ${remoteDockerfile}\n${dockerfileContent}\nEOF
+docker build -t ${imageName} -f ${remoteDockerfile} ${remotePath}
+docker rm -f ${container} >/dev/null 2>&1 || true
+docker run -d --name ${container} --restart unless-stopped --memory=1g --cpus=1 --pids-limit=256 -p ${port}:8080 -v ${remotePath}:/var/www/html ${imageName} php ${phpFlags} -S 0.0.0.0:8080 -t /var/www/html /var/www/html/.deployigo_router.php`;
   await execFileAsync('ssh', ['-o', 'BatchMode=yes', `${user}@${host}`, sshCmd]);
 
 
@@ -164,7 +298,38 @@ async function api(req, res, url) {
   if (req.method === 'POST' && url.pathname === '/api/auth/login') { const input = await readJson(req); const user = db.users.find(item => item.email === String(input.email || '').trim().toLowerCase()); if (!user || !validPassword(String(input.password || ''), user.passwordHash)) return send(res, 401, { error: 'Email or password is incorrect.' }); const session = createSession(db, user.id); writeDb(db); return send(res, 200, { user }, { 'Set-Cookie': sessionCookie(session) }); }
   if (req.method === 'POST' && url.pathname === '/api/auth/logout') { delete db.sessions[cookies(req).deployigo_session]; writeDb(db); return send(res, 200, { ok: true }, { 'Set-Cookie': 'deployigo_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0' }); }
   const user = currentUser(req, db); if (!user) return send(res, 401, { error: 'Login required.' });
-  if (req.method === 'POST' && url.pathname === '/api/projects/blank') { const input = await readJson(req); const name = String(input.name || '').trim().toLowerCase(); if (!/^[a-z0-9-]{3,40}$/.test(name)) return send(res, 400, { error: 'Project name must be 3-40 lowercase letters, numbers, or hyphens.' }); if (db.projects.some(item => item.ownerId === user.id && item.name === name)) return send(res, 409, { error: 'A project with this name already exists.' }); const project = localProject({ id: id('prj'), ownerId: user.id, owner: user.email, name, sourceType: 'blank-php', sourceStatus: 'creating', technology: 'PHP', phpVersion: '8.5', createdAt: new Date().toISOString() }); db.projects.push(project); await createBlankProject(project); await deployRemoteProject(project); writeDb(db); return send(res, 201, { project }); }
+  if (req.method === 'POST' && url.pathname === '/api/projects/blank') {
+    const input = await readJson(req);
+    const name = String(input.name || '').trim().toLowerCase();
+    if (!/^[a-z0-9-]{3,40}$/.test(name)) return send(res, 400, { error: 'Project name must be 3-40 lowercase letters, numbers, or hyphens.' });
+    if (db.projects.some(item => item.ownerId === user.id && item.name === name)) return send(res, 409, { error: 'A project with this name already exists.' });
+    const host = process.env.DEPLOY_REMOTE_HOST || '192.168.1.167';
+    const remoteUser = process.env.DEPLOY_REMOTE_USER || 'root';
+    const prjId = id('prj');
+    const port = Number(18080 + (parseInt(prjId.slice(-4), 16) % 100));
+    const project = localProject({
+      id: prjId,
+      ownerId: user.id,
+      owner: user.email,
+      name,
+      sourceType: 'blank-php',
+      sourceStatus: 'creating',
+      technology: 'PHP',
+      phpVersion: '8.5',
+      createdAt: new Date().toISOString(),
+      remoteHost: host,
+      remoteUser: remoteUser,
+      remotePort: port,
+      remotePath: `/opt/deployigo/workspaces/default/${prjId}`,
+      remoteContainer: `deployigo-${prjId}`,
+      url: `http://${host}:${port}/`
+    });
+    await createBlankProject(project);
+    db.projects.push(project);
+    writeDb(db);
+    updateAsync(project.id, () => deployRemoteProject(project));
+    return send(res, 201, { project });
+  }
   if (req.method === 'DELETE' && url.pathname.match(/^\/api\/projects\/([^/]+)$/)) { const projectId = url.pathname.split('/')[3]; const project = db.projects.find(item => item.id === projectId && item.ownerId === user.id); if (!project) return send(res, 404, { error: 'Project not found.' }); await removeRemoteProject(project); db.projects.splice(db.projects.indexOf(project), 1); fs.rmSync(path.join(DATA_DIR, 'projects', project.id), { recursive: true, force: true }); writeDb(db); return send(res, 200, { ok: true, message: 'Project and remote Docker container deleted.' }); }
   if (req.method === 'POST' && url.pathname.match(/^\/api\/projects\/([^/]+)\/redeploy$/)) { const projectId = url.pathname.split('/')[3]; const project = db.projects.find(item => item.id === projectId && item.ownerId === user.id); if (!project) return send(res, 404, { error: 'Project not found.' }); if (project.deploymentMode !== 'remote-docker') return send(res, 400, { error: 'This project is not deployed remotely.' }); project.sourceStatus = 'redeploying'; writeDb(db); updateAsync(project.id, () => redeployRemotePhp(project)); return send(res, 202, { project, message: `Remote Docker redeploy started with PHP ${project.phpVersion}.` }); }
   if (req.method === 'GET' && url.pathname === '/api/me') {
@@ -208,18 +373,79 @@ async function api(req, res, url) {
       }
     });
   }
-  if (req.method === 'POST' && url.pathname === '/api/projects') { const type = req.headers['content-type'] || ''; const upload = type.startsWith('multipart/form-data') ? parseMultipart(await readBuffer(req), type) : { fields: await readJson(req), file: null }; const input = upload.fields; const name = String(input.name || '').trim().toLowerCase(); const sourceType = input.sourceType === 'github' ? 'github-public' : 'zip'; const repoUrl = String(input.repoUrl || '').trim(); if (!/^[a-z0-9-]{3,40}$/.test(name)) return send(res, 400, { error: 'Project name must be 3-40 lowercase letters, numbers, or hyphens.' }); if (db.projects.some(item => item.ownerId === user.id && item.name === name)) return send(res, 409, { error: 'A project with this name already exists.' }); if (sourceType === 'github-public' && !/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?\/?$/.test(repoUrl)) return send(res, 400, { error: 'Enter a public GitHub repository URL.' }); if (sourceType === 'zip' && (!upload.file || !upload.file.filename.toLowerCase().endsWith('.zip'))) return send(res, 400, { error: 'Choose a ZIP file before creating the project.' }); const project = localProject({ id: id('prj'), ownerId: user.id, owner: user.email, name, sourceType, repoUrl: sourceType === 'github-public' ? repoUrl : null, sourceStatus: sourceType === 'github-public' ? 'downloading' : 'extracting', technology: projectTechnology(name), phpVersion: '8.5', createdAt: new Date().toISOString() }); db.projects.push(project); writeDb(db); if (sourceType === 'github-public') updateAsync(project.id, () => syncGithub(project.id, repoUrl)); else updateAsync(project.id, async () => { const latest = readDb().projects.find(item => item.id === project.id); await extractZip(latest, upload.file.buffer); await deployRemoteProject(latest); const updated = readDb(); Object.assign(updated.projects.find(item => item.id === project.id), latest); writeDb(updated); }); return send(res, 201, { project }); }
+  if (req.method === 'POST' && url.pathname === '/api/projects') {
+    const type = req.headers['content-type'] || '';
+    const upload = type.startsWith('multipart/form-data') ? parseMultipart(await readBuffer(req), type) : { fields: await readJson(req), file: null };
+    const input = upload.fields;
+    const name = String(input.name || '').trim().toLowerCase();
+    const sourceType = input.sourceType === 'github' ? 'github-public' : 'zip';
+    const repoUrl = String(input.repoUrl || '').trim();
+    if (!/^[a-z0-9-]{3,40}$/.test(name)) return send(res, 400, { error: 'Project name must be 3-40 lowercase letters, numbers, or hyphens.' });
+    if (db.projects.some(item => item.ownerId === user.id && item.name === name)) return send(res, 409, { error: 'A project with this name already exists.' });
+    if (sourceType === 'github-public' && !/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?\/?$/.test(repoUrl)) return send(res, 400, { error: 'Enter a public GitHub repository URL.' });
+    if (sourceType === 'zip' && (!upload.file || !upload.file.filename.toLowerCase().endsWith('.zip'))) return send(res, 400, { error: 'Choose a ZIP file before creating the project.' });
+    
+    const host = process.env.DEPLOY_REMOTE_HOST || '192.168.1.167';
+    const remoteUser = process.env.DEPLOY_REMOTE_USER || 'root';
+    const prjId = id('prj');
+    const port = Number(18080 + (parseInt(prjId.slice(-4), 16) % 100));
+
+    const project = localProject({
+      id: prjId,
+      ownerId: user.id,
+      owner: user.email,
+      name,
+      sourceType,
+      repoUrl: sourceType === 'github-public' ? repoUrl : null,
+      sourceStatus: sourceType === 'github-public' ? 'downloading' : 'extracting',
+      technology: projectTechnology(name),
+      phpVersion: '8.5',
+      createdAt: new Date().toISOString(),
+      remoteHost: host,
+      remoteUser: remoteUser,
+      remotePort: port,
+      remotePath: `/opt/deployigo/workspaces/default/${prjId}`,
+      remoteContainer: `deployigo-${prjId}`,
+      url: `http://${host}:${port}/`
+    });
+    db.projects.push(project);
+    writeDb(db);
+    if (sourceType === 'github-public') updateAsync(project.id, () => syncGithub(project.id, repoUrl));
+    else updateAsync(project.id, async () => {
+      const latest = readDb().projects.find(item => item.id === project.id);
+      await extractZip(latest, upload.file.buffer);
+      await deployRemoteProject(latest);
+      const updated = readDb();
+      Object.assign(updated.projects.find(item => item.id === project.id), latest);
+      writeDb(updated);
+    });
+    return send(res, 201, { project });
+  }
   const fileRoute = url.pathname.match(/^\/api\/projects\/([^/]+)\/files(?:\/(upload|folder))?$/);
   if (fileRoute) {
     const project = db.projects.find(item => item.id === fileRoute[1] && item.ownerId === user.id);
     if (!project || !project.deployPath) return send(res, 404, { error: 'Project files are not available yet.' });
     const requestedPath = String(url.searchParams.get('path') || '').replaceAll('\\', '/');
     const root = path.resolve(project.deployPath);
-    const resolveProjectPath = relative => { if (!relative || relative.startsWith('/') || relative.split('/').includes('..') || relative.split('/').includes('.deployigo-source.zip')) return null; const target = path.resolve(root, relative); return target.startsWith(`${root}${path.sep}`) ? target : null; };
+    const resolveProjectPath = relative => {
+      if (!relative || relative.startsWith('/') || relative.split('/').includes('..') || relative.split('/').includes('.deployigo-source.zip')) return null;
+      const target = path.resolve(root, relative);
+      return (target === root || target.startsWith(`${root}${path.sep}`)) ? target : null;
+    };
     if (req.method === 'GET' && !requestedPath && !url.pathname.endsWith('/upload')) { const files = []; const walk = directory => { for (const name of fs.readdirSync(directory)) { if (name === '.deployigo-source.zip' || name.startsWith('.')) continue; const target = path.join(directory, name); const relative = path.relative(root, target).replaceAll(path.sep, '/'); if (fs.statSync(target).isDirectory()) { files.push({ path: relative, type: 'folder' }); walk(target); } else files.push({ path: relative, type: 'file', size: fs.statSync(target).size }); } }; walk(root); return send(res, 200, { files }); }
     if (req.method === 'GET') { const target = resolveProjectPath(requestedPath); if (!target || !fs.existsSync(target) || !fs.statSync(target).isFile()) return send(res, 404, { error: 'File not found.' }); if (fs.statSync(target).size > 2 * 1024 * 1024) return send(res, 400, { error: 'File is too large to edit in the browser.' }); return send(res, 200, { path: requestedPath, content: fs.readFileSync(target, 'utf8') }); }
     if (req.method === 'PUT') { const target = resolveProjectPath(requestedPath); if (!target) return send(res, 400, { error: 'Invalid file path.' }); const input = await readJson(req); if (typeof input.content !== 'string' || input.content.length > 2 * 1024 * 1024) return send(res, 400, { error: 'Text content must be under 2 MB.' }); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, input.content); project.entryPoint = entryPoint(project); project.previewStatus = project.entryPoint ? 'available' : 'no-entry-point'; writeDb(db); updateAsync(project.id, () => deployRemoteProject(project)); return send(res, 200, { ok: true, path: requestedPath }); }
-    if (req.method === 'POST' && fileRoute[2] === 'folder') { const input = await readJson(req); const folderName = String(input.name || '').trim(); const target = resolveProjectPath(requestedPath ? path.join(requestedPath, folderName) : folderName); if (!target || !/^[^/\\.][^/\\]*$/.test(folderName)) return send(res, 400, { error: 'Enter a valid folder name.' }); if (fs.existsSync(target)) return send(res, 409, { error: 'That folder already exists.' }); fs.mkdirSync(target, { recursive: false }); updateAsync(project.id, () => deployRemoteProject(project)); return send(res, 201, { ok: true, path: path.relative(root, target).replaceAll(path.sep, '/') }); }
+    if (req.method === 'POST' && fileRoute[2] === 'folder') { const input = await readJson(req); const folderName = String(input.name || '').trim(); const parentPath = String(input.parent || requestedPath || '').replaceAll('\\', '/'); const targetPath = parentPath ? `${parentPath}/${folderName}` : folderName; const target = resolveProjectPath(targetPath); if (!target || !/^[^/\\.][^/\\]*$/.test(folderName)) return send(res, 400, { error: 'Enter a valid folder name.' }); if (fs.existsSync(target)) return send(res, 409, { error: 'That folder already exists.' }); fs.mkdirSync(target, { recursive: true }); updateAsync(project.id, () => deployRemoteProject(project)); return send(res, 201, { ok: true, path: path.relative(root, target).replaceAll(path.sep, '/') }); }
+    if (req.method === 'DELETE') {
+      const target = resolveProjectPath(requestedPath);
+      if (!target || !fs.existsSync(target)) return send(res, 404, { error: 'Item not found.' });
+      fs.rmSync(target, { recursive: true, force: true });
+      project.entryPoint = entryPoint(project);
+      project.previewStatus = project.entryPoint ? 'available' : 'no-entry-point';
+      writeDb(db);
+      updateAsync(project.id, () => deployRemoteProject(project));
+      return send(res, 200, { ok: true, message: 'Item deleted.' });
+    }
     if (req.method === 'POST' && fileRoute[2] === 'upload') {
       const upload = parseMultipart(await readBuffer(req), req.headers['content-type'] || '');
       if (!upload.file) return send(res, 400, { error: 'Choose a file to upload.' });
@@ -251,12 +477,24 @@ async function api(req, res, url) {
     return send(res, 200, { project, message: 'PHP directives updated successfully.' });
   }
 
+  const phpModulesRoute = url.pathname.match(/^\/api\/projects\/([^/]+)\/php-modules$/);
+  if (phpModulesRoute && (req.method === 'PATCH' || req.method === 'POST')) {
+    const project = db.projects.find(item => item.id === phpModulesRoute[1] && item.ownerId === user.id);
+    if (!project) return send(res, 404, { error: 'Project not found.' });
+    const input = await readJson(req);
+    project.phpModules = sanitizePhpModules(input.phpModules || input, project.phpModules);
+    writeDb(db);
+    updateAsync(project.id, () => deployRemoteProject(project));
+    return send(res, 200, { project, message: 'PHP modules updated successfully.' });
+  }
+
   const maintenanceRoute = url.pathname.match(/^\/api\/projects\/([^/]+)\/maintenance$/); if (maintenanceRoute && req.method === 'POST') { const project = db.projects.find(item => item.id === maintenanceRoute[1] && item.ownerId === user.id); if (!project) return send(res, 404, { error: 'Project not found.' }); project.maintenance = !project.maintenance; writeDb(db); updateAsync(project.id, () => deployRemoteProject(project)); return send(res, 200, { project }); }
 
-  const action = url.pathname.match(/^\/api\/projects\/([^/]+)(?:\/(rebuild|toggle))?$/); if (action) { const project = db.projects.find(item => item.id === action[1] && item.ownerId === user.id); if (!project) return send(res, 404, { error: 'Project not found.' }); if (req.method === 'PATCH') { const input = await readJson(req); if (input.phpSettings) { const FORBIDDEN_KEYS = ['disable_functions', 'open_basedir', 'allow_url_include', 'auto_prepend_file', 'auto_append_file', 'extension', 'zend_extension', 'exec', 'passthru', 'system', 'shell_exec']; if (Object.keys(input.phpSettings).some(key => FORBIDDEN_KEYS.includes(key.toLowerCase()))) { return send(res, 400, { error: 'Security Violation: System security directives are locked for container security.' }); } project.phpSettings = sanitizePhpSettings(input.phpSettings); } if (input.name !== undefined) { const name = String(input.name || '').trim().toLowerCase(); if (!/^[a-z0-9-]{3,40}$/.test(name)) return send(res, 400, { error: 'Invalid project name.' }); if (db.projects.some(item => item.ownerId === user.id && item.id !== project.id && item.name === name)) return send(res, 409, { error: 'A project with this name already exists.' }); project.name = name; project.url = project.deploymentMode === 'remote-docker' ? `http://${project.remoteHost}:${project.remotePort}/` : `http://localhost:${PORT}/local/${name}/`; } if (input.phpVersion && ['8.1', '8.2', '8.3', '8.4', '8.5'].includes(input.phpVersion)) { project.phpVersion = input.phpVersion; } if (input.sourceType === 'github') { const repoUrl = String(input.repoUrl || '').trim(); if (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?\/?$/.test(repoUrl)) return send(res, 400, { error: 'Enter a valid public GitHub URL.' }); project.sourceType = 'github-public'; project.repoUrl = repoUrl; project.sourceStatus = 'downloading'; project.deployPath = null; project.entryPoint = null; writeDb(db); updateAsync(project.id, () => syncGithub(project.id, repoUrl)); return send(res, 202, { project }); } writeDb(db); updateAsync(project.id, () => deployRemoteProject(project)); return send(res, 200, { project }); }
+  const action = url.pathname.match(/^\/api\/projects\/([^/]+)(?:\/(rebuild|toggle))?$/); if (action) { const project = db.projects.find(item => item.id === action[1] && item.ownerId === user.id); if (!project) return send(res, 404, { error: 'Project not found.' }); if (req.method === 'PATCH') { const input = await readJson(req); if (input.phpSettings) { const FORBIDDEN_KEYS = ['disable_functions', 'open_basedir', 'allow_url_include', 'auto_prepend_file', 'auto_append_file', 'extension', 'zend_extension', 'exec', 'passthru', 'system', 'shell_exec']; if (Object.keys(input.phpSettings).some(key => FORBIDDEN_KEYS.includes(key.toLowerCase()))) { return send(res, 400, { error: 'Security Violation: System security directives are locked for container security.' }); } project.phpSettings = sanitizePhpSettings(input.phpSettings); } if (input.phpModules) { project.phpModules = sanitizePhpModules(input.phpModules); } if (input.name !== undefined) { const name = String(input.name || '').trim().toLowerCase(); if (!/^[a-z0-9-]{3,40}$/.test(name)) return send(res, 400, { error: 'Invalid project name.' }); if (db.projects.some(item => item.ownerId === user.id && item.id !== project.id && item.name === name)) return send(res, 409, { error: 'A project with this name already exists.' }); project.name = name; project.url = project.deploymentMode === 'remote-docker' ? `http://${project.remoteHost}:${project.remotePort}/` : `http://localhost:${PORT}/local/${name}/`; } if (input.phpVersion && ['8.1', '8.2', '8.3', '8.4', '8.5'].includes(input.phpVersion)) { project.phpVersion = input.phpVersion; } if (input.sourceType === 'github') { const repoUrl = String(input.repoUrl || '').trim(); if (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?\/?$/.test(repoUrl)) return send(res, 400, { error: 'Enter a valid public GitHub URL.' }); project.sourceType = 'github-public'; project.repoUrl = repoUrl; project.sourceStatus = 'downloading'; project.deployPath = null; project.entryPoint = null; writeDb(db); updateAsync(project.id, () => syncGithub(project.id, repoUrl)); return send(res, 202, { project }); } writeDb(db); updateAsync(project.id, () => deployRemoteProject(project)); return send(res, 200, { project }); }
 
 
-    if (req.method === 'POST' && action[2] === 'toggle') { project.enabled = project.enabled === false; writeDb(db); if (project.enabled) updateAsync(project.id, () => deployRemoteProject(project)); else updateAsync(project.id, () => stopRemoteProject(project)); return send(res, 200, { project }); } if (req.method === 'POST' && action[2] === 'rebuild') { project.sourceStatus = 'rebuilding'; writeDb(db); if (project.sourceType === 'github-public') updateAsync(project.id, () => syncGithub(project.id, project.repoUrl)); else { const source = path.join(DATA_DIR, 'projects', project.id, '.deployigo-source.zip'); updateAsync(project.id, async () => { if (fs.existsSync(source)) await extractZip(project, fs.readFileSync(source)); await deployRemoteProject(project); writeDb(readDb()); }); } return send(res, 202, { project }); } if (req.method === 'DELETE') { await removeRemoteProject(project); const index = db.projects.findIndex(item => item.id === project.id); db.projects.splice(index, 1); fs.rmSync(path.join(DATA_DIR, 'projects', project.id), { recursive: true, force: true }); writeDb(db); return send(res, 200, { ok: true }); } }
+
+    if (req.method === 'POST' && action[2] === 'toggle') { project.enabled = project.enabled === false; writeDb(db); if (project.enabled) updateAsync(project.id, () => deployRemoteProject(project)); else updateAsync(project.id, () => stopRemoteProject(project)); return send(res, 200, { project }); } if (req.method === 'POST' && action[2] === 'rebuild') { project.sourceStatus = 'rebuilding'; writeDb(db); if (project.sourceType === 'github-public') updateAsync(project.id, () => syncGithub(project.id, project.repoUrl)); else if (project.sourceType === 'blank-php') updateAsync(project.id, () => deployRemoteProject(project)); else { const source = path.join(DATA_DIR, 'projects', project.id, '.deployigo-source.zip'); updateAsync(project.id, async () => { if (fs.existsSync(source)) await extractZip(project, fs.readFileSync(source)); await deployRemoteProject(project); writeDb(readDb()); }); } return send(res, 202, { project }); } if (req.method === 'DELETE') { await removeRemoteProject(project); const index = db.projects.findIndex(item => item.id === project.id); db.projects.splice(index, 1); fs.rmSync(path.join(DATA_DIR, 'projects', project.id), { recursive: true, force: true }); writeDb(db); return send(res, 200, { ok: true }); } }
   if (req.method === 'GET' && url.pathname === '/api/admin/summary') { if (!user.isAdmin) return send(res, 403, { error: 'Admin access required.' }); return send(res, 200, { stats: { users: db.users.length, workspaces: db.users.length, projects: db.projects.length, deployments: db.projects.length }, projects: db.projects.slice(-20).reverse() }); }
   return send(res, 404, { error: 'Not found.' });
 }
