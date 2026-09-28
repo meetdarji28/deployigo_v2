@@ -512,10 +512,13 @@ function ensureFileManager() {
             </div>
             <div id="file-list" class="file-list"></div>
           </div>
-          <div class="file-editor-container">
+          <div class="file-editor-container" hidden>
             <div class="file-editor-head">
               <span id="selected-file">No file selected</span>
-              <button class="button" id="save-file" type="button" disabled>Save File</button>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button class="button" id="save-file" type="button" disabled>Save File</button>
+                <button class="icon-button" id="close-file-editor" type="button" title="Close Editor">×</button>
+              </div>
             </div>
             <textarea id="file-content" spellcheck="false" disabled placeholder="Select a text file from the sidebar to view or edit its contents."></textarea>
             <div class="file-editor-foot">
@@ -529,12 +532,17 @@ function ensureFileManager() {
   document.querySelector('#save-file').addEventListener('click', () => {
     if (activeFileProject) saveActiveFile();
   });
+  document.querySelector('#close-file-editor')?.addEventListener('click', () => {
+    const editorContainer = document.querySelector('.file-editor-container');
+    const fileLayout = document.querySelector('.file-layout');
+    if (editorContainer) editorContainer.hidden = true;
+    if (fileLayout) fileLayout.classList.remove('editor-open');
+  });
   document.querySelector('#close-files').addEventListener('click', () => {
     document.querySelector('#files').hidden = true;
     sessionStorage.removeItem('activeFileProjectId');
     activeFileProject = null;
   });
-
   const fileManagerModal = document.querySelector('.file-manager');
   const dragOverlay = document.querySelector('#drag-overlay');
   let dragCounter = 0;
@@ -583,8 +591,12 @@ async function openFiles(project) {
   sessionStorage.setItem('activeFileProjectId', project.id);
   const dragOverlay = document.querySelector('#drag-overlay');
   const fileManagerModal = document.querySelector('.file-manager');
+  const editorContainer = document.querySelector('.file-editor-container');
+  const fileLayout = document.querySelector('.file-layout');
   if (dragOverlay) dragOverlay.hidden = true;
   if (fileManagerModal) fileManagerModal.classList.remove('drag-over');
+  if (editorContainer) editorContainer.hidden = true;
+  if (fileLayout) fileLayout.classList.remove('editor-open');
   document.querySelector('#files-title').textContent = `${project.name} Workspace`;
   document.querySelector('#selected-file').textContent = 'No file selected';
   document.querySelector('#file-content').value = '';
@@ -595,22 +607,72 @@ async function openFiles(project) {
 }
 
 
+const expandedFolders = new Set();
+let activeSelectedItem = { path: '', type: '' };
+
 async function listFiles() {
   const response = await fetch(`/api/projects/${activeFileProject.id}/files`);
   const data = await response.json();
   const fileList = document.querySelector('#file-list');
   if (!fileList) return;
-  if (response.ok) {
-    fileList.innerHTML = data.files.map(file => {
-      const isFolder = file.type === 'folder';
-      const isSelected = !isFolder && document.querySelector('#selected-file').textContent === file.path;
-      return isFolder
-        ? `<div class="file-item folder-item" data-folder="${file.path}" style="cursor:pointer">📁 ${file.path}</div>`
-        : `<button class="file-item ${isSelected ? 'active' : ''}" data-file="${file.path}">📄 ${file.path}</button>`;
-    }).join('') || '<p class="muted" style="padding:12px;font-size:12px">No files uploaded yet.</p>';
-  } else {
+  if (!response.ok) {
     fileList.innerHTML = `<p class="muted" style="padding:12px;font-size:12px">${data.error}</p>`;
+    return;
   }
+
+  // Build tree data structure from flat paths list
+  const tree = {};
+  for (const item of data.files) {
+    const parts = item.path.split('/');
+    let current = tree;
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const isLast = i === parts.length - 1;
+      const currentPath = parts.slice(0, i + 1).join('/');
+      if (!current[part]) {
+        current[part] = {
+          name: part,
+          path: currentPath,
+          type: isLast ? item.type : 'folder',
+          children: {}
+        };
+      }
+      current = current[part].children;
+    }
+  }
+
+  function renderTreeNodes(nodeObj) {
+    const keys = Object.keys(nodeObj).sort((a, b) => {
+      const isAFolder = nodeObj[a].type === 'folder';
+      const isBFolder = nodeObj[b].type === 'folder';
+      if (isAFolder !== isBFolder) return isAFolder ? -1 : 1;
+      return a.localeCompare(b);
+    });
+
+    return keys.map(key => {
+      const node = nodeObj[key];
+      const isFolder = node.type === 'folder';
+      if (isFolder) {
+        const isExpanded = expandedFolders.has(node.path);
+        const isSelected = activeSelectedItem.path === node.path && activeSelectedItem.type === 'folder';
+        const childHtml = isExpanded ? `<div class="folder-children">${renderTreeNodes(node.children)}</div>` : '';
+        const icon = isExpanded ? '📂' : '📁';
+        return `
+          <div class="folder-wrapper">
+            <div class="file-item folder-item ${isExpanded ? 'expanded' : ''} ${isSelected ? 'active' : ''}" data-folder="${node.path}" style="cursor:pointer">
+              <span class="folder-icon">${icon}</span> <span>${node.name}</span>
+            </div>
+            ${childHtml}
+          </div>
+        `;
+      } else {
+        const isSelected = activeSelectedItem.path === node.path && activeSelectedItem.type === 'file';
+        return `<button class="file-item ${isSelected ? 'active' : ''}" data-file="${node.path}">📄 ${node.name}</button>`;
+      }
+    }).join('');
+  }
+
+  fileList.innerHTML = renderTreeNodes(tree) || '<p class="muted" style="padding:12px;font-size:12px">No files uploaded yet.</p>';
 }
 
 async function saveActiveFile() {
@@ -638,18 +700,41 @@ async function saveActiveFile() {
   await listFiles();
 }
 
+document.addEventListener('dblclick', async event => {
+  const folder = event.target.closest('.file-item.folder-item');
+  if (folder && activeFileProject) {
+    const folderPath = folder.dataset.folder;
+    if (expandedFolders.has(folderPath)) {
+      expandedFolders.delete(folderPath);
+    } else {
+      expandedFolders.add(folderPath);
+    }
+    await listFiles();
+  }
+});
+
 document.addEventListener('click', async event => {
   const file = event.target.closest('.file-item:not(.folder-item)');
   const folder = event.target.closest('.file-item.folder-item');
   if ((file || folder) && activeFileProject) {
     document.querySelectorAll('.file-item').forEach(el => el.classList.remove('active'));
     const targetItem = file || folder;
+    const itemPath = targetItem.dataset.file || targetItem.dataset.folder;
+    const itemType = file ? 'file' : 'folder';
+    activeSelectedItem = { path: itemPath, type: itemType };
     targetItem.classList.add('active');
     const deleteToolbarBtn = document.querySelector('#delete-selected');
     if (deleteToolbarBtn) {
       deleteToolbarBtn.disabled = false;
-      deleteToolbarBtn.dataset.path = targetItem.dataset.file || targetItem.dataset.folder;
-      deleteToolbarBtn.dataset.type = file ? 'file' : 'folder';
+      deleteToolbarBtn.dataset.path = itemPath;
+      deleteToolbarBtn.dataset.type = itemType;
+    }
+    if (folder) {
+      const folderPath = folder.dataset.folder;
+      if (!expandedFolders.has(folderPath)) {
+        expandedFolders.add(folderPath);
+        await listFiles();
+      }
     }
   }
 
@@ -657,6 +742,10 @@ document.addEventListener('click', async event => {
     const response = await fetch(`/api/projects/${activeFileProject.id}/files?path=${encodeURIComponent(file.dataset.file)}`);
     const data = await response.json();
     if (response.ok) {
+      const editorContainer = document.querySelector('.file-editor-container');
+      const fileLayout = document.querySelector('.file-layout');
+      if (editorContainer) editorContainer.hidden = false;
+      if (fileLayout) fileLayout.classList.add('editor-open');
       document.querySelector('#selected-file').textContent = data.path;
       document.querySelector('#file-content').value = data.content;
       document.querySelector('#file-content').disabled = false;
@@ -695,8 +784,8 @@ document.addEventListener('click', async event => {
   }
   if (event.target.closest('#save-file') && activeFileProject) saveActiveFile();
   if (event.target.closest('#new-file') && activeFileProject) {
-    const activeFolder = document.querySelector('.file-item.folder-item.active');
-    const folderPrefix = activeFolder ? `${activeFolder.dataset.folder}/` : '';
+    const parentFolder = activeSelectedItem.type === 'folder' ? activeSelectedItem.path : (activeSelectedItem.path ? activeSelectedItem.path.substring(0, activeSelectedItem.path.lastIndexOf('/')) : '');
+    const folderPrefix = parentFolder ? `${parentFolder}/` : '';
     const name = await showPromptDialog('Create New File', 'New file path, for example notes.txt', folderPrefix);
     if (name) {
       const fullPath = (folderPrefix && !name.startsWith(folderPrefix)) ? `${folderPrefix}${name}` : name;
@@ -709,6 +798,16 @@ document.addEventListener('click', async event => {
       const result = await response.json();
       await progressPromise;
       if (response.ok) {
+        // Expand all parent directory levels
+        const parts = fullPath.split('/');
+        for (let i = 1; i < parts.length; i++) {
+          expandedFolders.add(parts.slice(0, i).join('/'));
+        }
+        activeSelectedItem = { path: fullPath, type: 'file' };
+        const editorContainer = document.querySelector('.file-editor-container');
+        const fileLayout = document.querySelector('.file-layout');
+        if (editorContainer) editorContainer.hidden = false;
+        if (fileLayout) fileLayout.classList.add('editor-open');
         document.querySelector('#selected-file').textContent = fullPath;
         document.querySelector('#file-content').value = '';
         document.querySelector('#file-content').disabled = false;
@@ -721,8 +820,7 @@ document.addEventListener('click', async event => {
     }
   }
   if (event.target.closest('#new-folder') && activeFileProject) {
-    const activeFolder = document.querySelector('.file-item.folder-item.active');
-    const parentFolder = activeFolder ? activeFolder.dataset.folder : '';
+    const parentFolder = activeSelectedItem.type === 'folder' ? activeSelectedItem.path : (activeSelectedItem.path ? activeSelectedItem.path.substring(0, activeSelectedItem.path.lastIndexOf('/')) : '');
     const promptTitle = parentFolder ? `Create Folder inside "${parentFolder}"` : 'Create New Folder';
     const name = await showPromptDialog(promptTitle, 'New folder name, for example assets');
     if (name) {
@@ -734,35 +832,143 @@ document.addEventListener('click', async event => {
       });
       const result = await response.json();
       await progressPromise;
-      showMessage('#file-message', response.ok ? '📁 Folder created successfully.' : result.error, !response.ok);
+      if (response.ok) {
+        const createdFolderPath = parentFolder ? `${parentFolder}/${name}` : name;
+        if (parentFolder) {
+          const parts = parentFolder.split('/');
+          for (let i = 1; i <= parts.length; i++) {
+            expandedFolders.add(parts.slice(0, i).join('/'));
+          }
+        }
+        expandedFolders.add(createdFolderPath);
+        activeSelectedItem = { path: createdFolderPath, type: 'folder' };
+        showMessage('#file-message', '📁 Folder created successfully.');
+      } else {
+        showMessage('#file-message', result.error, true);
+      }
       await listFiles();
     }
   }
 });
 
+function closeFileContextMenu() {
+  const existing = document.querySelector('#file-context-menu');
+  if (existing) existing.remove();
+}
+
+document.addEventListener('click', () => closeFileContextMenu());
+
 document.addEventListener('contextmenu', async event => {
   const item = event.target.closest('.file-item');
   if (item && activeFileProject) {
     event.preventDefault();
+    closeFileContextMenu();
     const itemPath = item.dataset.file || item.dataset.folder;
-    const itemType = item.dataset.file ? 'file' : 'folder';
-    const confirmed = await showConfirmDialog(`Delete ${itemType === 'folder' ? 'Folder' : 'File'}`, `Are you sure you want to delete "${itemPath}"? This operation cannot be undone.`);
-    if (confirmed) {
-      let progressPromise = showOperationProgress('Deleting Item...', `Removing "${itemPath}" from workspace and syncing runtime environment...`, 2000);
-      const response = await fetch(`/api/projects/${activeFileProject.id}/files?path=${encodeURIComponent(itemPath)}`, {
-        method: 'DELETE'
-      });
-      const result = await response.json();
-      await progressPromise;
-      showMessage('#file-message', response.ok ? `🗑️ ${itemType === 'folder' ? 'Folder' : 'File'} deleted successfully.` : result.error, !response.ok);
-      if (document.querySelector('#selected-file').textContent === itemPath) {
-        document.querySelector('#selected-file').textContent = 'No file selected';
-        document.querySelector('#file-content').value = '';
-        document.querySelector('#file-content').disabled = true;
-        document.querySelector('#save-file').disabled = true;
+    const isFile = !!item.dataset.file;
+    const isFolder = !isFile;
+
+    const menu = document.createElement('div');
+    menu.id = 'file-context-menu';
+    menu.className = 'file-context-menu';
+    menu.style.left = `${Math.min(event.clientX, window.innerWidth - 190)}px`;
+    menu.style.top = `${Math.min(event.clientY, window.innerHeight - 150)}px`;
+
+    let html = '';
+    if (isFile) {
+      html += `<button type="button" data-action="edit">✏️ View / Edit File</button>`;
+      if (activeFileProject.url) {
+        const fileUrl = `${activeFileProject.url}${itemPath}`;
+        html += `<button type="button" data-action="preview">🔗 Open Preview URL</button>`;
       }
-      await listFiles();
+    } else {
+      html += `<button type="button" data-action="new-file">📄 New File Inside</button>`;
+      html += `<button type="button" data-action="new-folder">📁 New Folder Inside</button>`;
     }
+    html += `<button type="button" data-action="delete" class="danger">🗑️ Delete</button>`;
+    menu.innerHTML = html;
+    document.body.appendChild(menu);
+
+    menu.addEventListener('click', async e => {
+      e.stopPropagation();
+      closeFileContextMenu();
+      const actionBtn = e.target.closest('button');
+      if (!actionBtn) return;
+      const action = actionBtn.dataset.action;
+
+      if (action === 'edit' && isFile) {
+        const response = await fetch(`/api/projects/${activeFileProject.id}/files?path=${encodeURIComponent(itemPath)}`);
+        const data = await response.json();
+        if (response.ok) {
+          const editorContainer = document.querySelector('.file-editor-container');
+          const fileLayout = document.querySelector('.file-layout');
+          if (editorContainer) editorContainer.hidden = false;
+          if (fileLayout) fileLayout.classList.add('editor-open');
+          document.querySelector('#selected-file').textContent = data.path;
+          document.querySelector('#file-content').value = data.content;
+          document.querySelector('#file-content').disabled = false;
+          document.querySelector('#save-file').disabled = false;
+        }
+      } else if (action === 'preview' && isFile) {
+        window.open(`${activeFileProject.url}${itemPath}`, '_blank');
+      } else if (action === 'new-file' && isFolder) {
+        const name = await showPromptDialog(`Create File in "${itemPath}"`, 'File name, e.g. script.js', `${itemPath}/`);
+        if (name) {
+          const fullPath = !name.startsWith(`${itemPath}/`) ? `${itemPath}/${name}` : name;
+          let progressPromise = showOperationProgress('Creating File...', `Creating "${fullPath}"...`, 2000);
+          const response = await fetch(`/api/projects/${activeFileProject.id}/files?path=${encodeURIComponent(fullPath)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: '' })
+          });
+          const result = await response.json();
+          await progressPromise;
+          if (response.ok) {
+            document.querySelector('#selected-file').textContent = fullPath;
+            document.querySelector('#file-content').value = '';
+            document.querySelector('#file-content').disabled = false;
+            document.querySelector('#save-file').disabled = false;
+            showMessage('#file-message', '✅ File created successfully.');
+          } else {
+            showMessage('#file-message', result.error, true);
+          }
+          await listFiles();
+        }
+      } else if (action === 'new-folder' && isFolder) {
+        const name = await showPromptDialog(`Create Folder in "${itemPath}"`, 'Folder name, e.g. subfolder');
+        if (name) {
+          const progressPromise = showOperationProgress('Creating Folder...', `Adding directory...`, 2000);
+          const response = await fetch(`/api/projects/${activeFileProject.id}/files/folder`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, parent: itemPath })
+          });
+          const result = await response.json();
+          await progressPromise;
+          showMessage('#file-message', response.ok ? '📁 Folder created successfully.' : result.error, !response.ok);
+          await listFiles();
+        }
+      } else if (action === 'delete') {
+        const confirmed = await showConfirmDialog(`Delete ${isFolder ? 'Folder' : 'File'}`, `Are you sure you want to delete "${itemPath}"?`);
+        if (confirmed) {
+          let progressPromise = showOperationProgress('Deleting Item...', `Removing "${itemPath}"...`, 2000);
+          const response = await fetch(`/api/projects/${activeFileProject.id}/files?path=${encodeURIComponent(itemPath)}`, {
+            method: 'DELETE'
+          });
+          const result = await response.json();
+          await progressPromise;
+          showMessage('#file-message', response.ok ? `🗑️ ${isFolder ? 'Folder' : 'File'} deleted successfully.` : result.error, !response.ok);
+          if (document.querySelector('#selected-file').textContent === itemPath) {
+            const editorContainer = document.querySelector('.file-editor-container');
+            const fileLayout = document.querySelector('.file-layout');
+            if (editorContainer) editorContainer.hidden = true;
+            if (fileLayout) fileLayout.classList.remove('editor-open');
+            document.querySelector('#selected-file').textContent = 'No file selected';
+            document.querySelector('#file-content').value = '';
+          }
+          await listFiles();
+        }
+      }
+    });
   }
 });
 
