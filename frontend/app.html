@@ -1,1 +1,965 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Workspace | Deployigo</title><link rel="stylesheet" href="/frontend/styles.css"></head><body><main class="shell"><nav><a class="brand" href="/app/">deployigo<span>.</span></a><div><a class="nav-btn" href="/">🏠 Home</a><span id="user"></span><button class="button ghost" id="logout">Log out</button></div></nav><div class="app-layout"><aside class="sidebar"><div class="sidebar-section"><p class="sidebar-title">Workspace</p><div class="sidebar-menu"><button class="sidebar-link active" data-tab="overview"><span>📊 Overview</span></button><button class="sidebar-link" data-tab="projects"><span>🚀 Projects</span><span class="sidebar-badge" id="sidebar-proj-count">0</span></button><button class="sidebar-link" data-tab="create"><span>➕ New Project</span></button></div></div></aside><section class="main-content"><section id="overview-container"><div class="dashboard-header" id="dashboard-header"><div><p class="eyebrow">Control Plane</p><h1 id="hello">Mitkumar's Workspace</h1></div><div class="view-tabs"><button class="tab-btn active" id="tab-btn-projects" data-tab="projects">Projects</button><button class="tab-btn" id="tab-btn-create" data-tab="create">+ Create Project</button></div></div><div class="stats" id="stats-overview"><article><b id="stat-total">0</b><span>Total Projects</span></article><article><b id="stat-active">0</b><span>Active Runtimes</span></article><article><b id="stat-storage">0 MB / 5 GB</b><span>Storage Quota</span></article><article><b id="stat-memory">1 GB / 1 vCPU</b><span>Container Specs</span></article></div></section><div class="panel" id="create-panel" hidden><h2>Create project</h2><p class="muted">Provision a new project runtime environment.</p><form id="project"><label>Project name<input name="name" pattern="[a-z0-9-]+" placeholder="storefront" required></label><fieldset><legend>Source</legend><label><input type="radio" name="sourceType" value="blank" checked> ⚡ Blank PHP Project (with index.php)</label><label><input type="radio" name="sourceType" value="zip"> 📦 Upload ZIP</label><label><input type="radio" name="sourceType" value="github"> 🐙 Public GitHub repository</label></fieldset><label id="zip-source" hidden>ZIP file<input name="source" type="file" accept=".zip"></label><label id="github-source" hidden>Public GitHub URL<input name="repoUrl" type="url" placeholder="https://github.com/user/project"></label><button class="button">Create project</button><p id="message"></p></form></div><section id="projects-section"><h2>Existing Projects</h2><div id="projects" class="project-list"></div></section></section></div></main><div id="editor" class="modal" hidden><div class="modal-card"><div class="modal-head"><div><p class="eyebrow">Project settings</p><h2>Edit project</h2></div><button class="icon-button" id="close-editor" type="button" aria-label="Close">×</button></div><form id="edit-project"><input type="hidden" name="id"><label>Project name<input name="name" pattern="[a-z0-9-]+" required></label><label>PHP version<select name="phpVersion"><option value="8.5">PHP 8.5 (latest)</option><option value="8.4">PHP 8.4</option><option value="8.3">PHP 8.3</option><option value="8.2">PHP 8.2</option><option value="8.1">PHP 8.1</option></select></label><fieldset><legend>Replace source</legend><label><input type="radio" name="editSourceType" value="keep" checked> Keep current source</label><label><input type="radio" name="editSourceType" value="github"> Change public GitHub URL</label></fieldset><label id="edit-github-source" hidden>Public GitHub URL<input name="repoUrl" type="url" placeholder="https://github.com/user/project"></label><div class="modal-actions"><button class="button ghost" id="cancel-editor" type="button">Cancel</button><button class="button" type="submit">Save changes</button></div><p id="edit-message"></p></form></div></div><div id="project-modal" class="modal" hidden><div class="modal-card"><div class="modal-head"><div><p class="eyebrow">Project overview</p><h2 id="modal-project-name">Project Details</h2></div><button class="icon-button" id="close-project-modal" type="button" aria-label="Close">×</button></div><div class="detail-grid"><div class="detail-item"><label>Project Name</label><span id="modal-detail-name"></span></div><div class="detail-item"><label>Technology</label><span id="modal-detail-tech"></span></div><div class="detail-item"><label>Engine / Version</label><span id="modal-detail-engine"></span></div><div class="detail-item"><label>Status</label><span id="modal-detail-status"></span></div><div class="detail-item"><label>Storage Used</label><span id="modal-detail-storage">0 B</span></div><div class="detail-item"><label>Allocated RAM</label><span id="modal-detail-ram">1 GB</span></div><div class="detail-item"><label>CPU Cores</label><span id="modal-detail-cpu">1 vCPU</span></div><div class="detail-item" style="grid-column:1/-1"><label>Live URL</label><a id="modal-detail-url" href="#" target="_blank" style="color:var(--orange);font-weight:600"></a></div></div><div class="modal-actions"><button class="button ghost" data-action="files" id="modal-act-files">File Manager</button><button class="button ghost" data-action="php-config" id="modal-act-php-config">⚙️ PHP Config</button><button class="button ghost" data-action="php-modules" id="modal-act-php-modules">🧩 PHP Extensions</button><button class="button ghost" data-action="edit" id="modal-act-edit">Edit Settings</button><button class="button ghost" data-action="rebuild" id="modal-act-rebuild">Rebuild</button><button class="button ghost" data-action="toggle" id="modal-act-toggle">Disable</button><button class="button ghost" data-action="maintenance" id="modal-act-maint">Maintenance</button><button class="button danger" data-action="delete" id="modal-act-delete">Delete</button></div></div></div><div id="php-settings-modal" class="modal" hidden><div class="modal-card" style="max-width:580px"><div class="modal-head"><div><p class="eyebrow">PHP Directives & ini Manager</p><h2 id="php-modal-title">Configure PHP Runtime</h2></div><button class="icon-button" id="close-php-settings" type="button" aria-label="Close">×</button></div><div class="security-banner" style="background:#f3f0e8;border:1px solid #c8c8b9;border-radius:6px;padding:12px 14px;margin-bottom:20px;font-size:12px;line-height:1.5"><strong style="color:var(--ink)">🛡️ Security Isolation Policy:</strong> Safe PHP runtime directives can be adjusted below. System directives (such as <code>disable_functions</code>, <code>open_basedir</code>, and <code>extension</code>) are permanently locked to ensure container security.</div><form id="php-settings-form"><input type="hidden" name="id"><div style="display:grid;grid-template-columns:1fr 1fr;gap:16px"><label>Memory Limit (memory_limit)<select name="memory_limit"><option value="64M">64M</option><option value="128M">128M (Default)</option><option value="256M">256M</option><option value="512M">512M</option></select></label><label>Max Execution Time (sec)<input name="max_execution_time" type="number" min="10" max="300" placeholder="60"></label><label>Upload Max Filesize<select name="upload_max_filesize"><option value="2M">2M</option><option value="8M">8M</option><option value="16M">16M (Default)</option><option value="32M">32M</option><option value="64M">64M</option><option value="100M">100M</option></select></label><label>POST Max Size<select name="post_max_size"><option value="4M">4M</option><option value="16M">16M</option><option value="32M">32M (Default)</option><option value="64M">64M</option><option value="128M">128M</option></select></label><label>Display Errors (display_errors)<select name="display_errors"><option value="Off">Off (Production Safe)</option><option value="On">On (Debugging)</option></select></label><label>Default Timezone (date.timezone)<select name="date_timezone"><option value="UTC">UTC (Universal)</option><option value="America/New_York">America/New_York (EST)</option><option value="Europe/London">Europe/London (GMT)</option><option value="Asia/Kolkata">Asia/Kolkata (IST)</option><option value="Asia/Tokyo">Asia/Tokyo (JST)</option><option value="Australia/Sydney">Australia/Sydney (AEST)</option></select></label><label>Max Input Vars<input name="max_input_vars" type="number" min="1000" max="5000" placeholder="1000"></label><label>Session GC Lifetime (sec)<input name="session_gc_maxlifetime" type="number" min="1440" max="86400" placeholder="1440"></label></div><div class="modal-actions" style="margin-top:20px"><button class="button ghost" id="cancel-php-settings" type="button">Cancel</button><button class="button" type="submit">Save PHP Settings</button></div><p id="php-settings-message" style="margin-top:12px;font:12px/1.4 'DM Mono',monospace"></p></form></div></div><div id="php-modules-modal" class="modal" hidden><div class="modal-card" style="max-width:720px;max-height:85vh;overflow-y:auto"><div class="modal-head"><div><p class="eyebrow">PHP Extensions & Drivers</p><h2 id="php-modules-title">Manage PHP Extensions</h2></div><button class="icon-button" id="close-php-modules" type="button" aria-label="Close">×</button></div><div class="security-banner" style="background:#f3f0e8;border:1px solid #c8c8b9;border-radius:6px;padding:12px 14px;margin-bottom:16px;font-size:12px;line-height:1.5"><strong style="color:var(--ink)">🛡️ Anti-Hacking Security Lock:</strong> Toggle official database & cache extensions (MySQL, PostgreSQL, MongoDB, Redis, Imagick). Custom arbitrary binary paths are blocked.</div><div style="margin-bottom:16px"><input id="ext-search-input" type="text" placeholder="🔍 Search extension (e.g. pgsql, mongo, redis, gd)..." style="width:100%;font:13px 'DM Mono',monospace;padding:10px 14px;border:1px solid #adb3a5;border-radius:6px"></div><div id="php-modules-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px"></div><div class="modal-actions" style="margin-top:20px"><button class="button" id="close-php-modules-btn" type="button">Done</button></div></div></div><div id="progress-modal" class="modal" hidden><div class="modal-card progress-card"><div class="spinner"></div><p class="eyebrow" id="progress-eyebrow">System Operation</p><h2 id="progress-title" style="margin:4px 0 12px">Rebuilding Project...</h2><p id="progress-message" class="muted" style="margin-bottom:16px">Provisioning environment and compiling runtime dependencies.</p><div class="progress-container"><div class="progress-bar" id="progress-bar-fill"></div></div><div class="progress-status"><span id="progress-text">Starting operation...</span><b id="progress-percent">0%</b></div></div></div><script src="/frontend/app.js"></script></body></html>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Workspace | Deployigo</title><link rel="stylesheet" href="/frontend/styles.css?v=4.0"></head><body>
+
+<!-- Coming Soon Toast -->
+<div id="coming-soon-toast"></div>
+
+<main class="shell">
+  <nav>
+    <a class="brand" href="/app/">deployigo<span>.</span></a>
+    <div>
+      <a class="nav-btn" href="/">🏠 Home</a>
+      <span id="user"></span>
+      <button class="button ghost" id="logout">Log out</button>
+    </div>
+  </nav>
+
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <p class="sidebar-title">Workspace</p>
+        <div class="sidebar-menu">
+          <button class="sidebar-link active" data-tab="overview" onclick="switchTab('overview')"><span>📊 Overview</span></button>
+          <button class="sidebar-link" data-tab="projects" onclick="switchTab('projects')"><span>🚀 Projects</span><span class="sidebar-badge" id="sidebar-proj-count">0</span></button>
+          <button class="sidebar-link" data-tab="create" onclick="switchTab('create')"><span>➕ New Project</span></button>
+        </div>
+      </div>
+    </aside>
+
+    <section class="main-content">
+
+      <!-- ===================== DASHBOARD HEADER ===================== -->
+      <div class="dashboard-header" id="dashboard-header">
+        <div>
+          <p class="eyebrow">Control Plane</p>
+          <h1 id="hello">Workspace</h1>
+        </div>
+        <div class="view-tabs">
+          <button class="tab-btn active" id="tab-btn-overview" data-tab="overview" onclick="switchTab('overview')">📊 Overview</button>
+          <button class="tab-btn" id="tab-btn-projects" data-tab="projects" onclick="switchTab('projects')">🚀 Projects</button>
+          <button class="tab-btn" id="tab-btn-create" data-tab="create" onclick="switchTab('create')">➕ Create Project</button>
+        </div>
+      </div>
+
+      <!-- ===================== OVERVIEW STATS ===================== -->
+      <section id="overview-container">
+        <div class="stats" id="stats-overview">
+          <article>
+            <b id="stat-total">0</b>
+            <span>Total Projects</span>
+          </article>
+          <article>
+            <b id="stat-active">0</b>
+            <span>Active Runtimes</span>
+          </article>
+          <article>
+            <b id="stat-storage">0 MB</b>
+            <span>Storage Used</span>
+            <div class="stat-progress-wrap"><div class="stat-progress-bar" id="stat-storage-bar"></div></div>
+            <p class="stat-sub" id="stat-storage-sub">of 5 GB quota</p>
+          </article>
+          <article>
+            <b id="stat-vcpu">0.00 vCPU</b>
+            <span>CPU Utilization</span>
+            <div class="stat-progress-wrap"><div class="stat-progress-bar" id="stat-vcpu-bar"></div></div>
+            <p class="stat-sub" id="stat-vcpu-sub">of 1 vCPU allocated</p>
+          </article>
+        </div>
+        <div class="stats" id="stats-ram-row" style="grid-template-columns:1fr 3fr;margin-top:12px">
+          <article>
+            <b id="stat-ram">0 MB</b>
+            <span>RAM Used</span>
+            <div class="stat-progress-wrap"><div class="stat-progress-bar" id="stat-ram-bar"></div></div>
+            <p class="stat-sub" id="stat-ram-sub">of 1 GB allocated</p>
+          </article>
+          <article style="background:transparent;border:1px solid var(--line);color:var(--ink)">
+            <b style="font-size:14px;color:var(--ink)">📡 Resource Monitoring</b>
+            <span style="color:#526059;font-size:12px;line-height:1.6;margin-top:4px;display:block">
+              Resources are shared across all active project containers. Storage quota is per-workspace (5 GB).
+              Click any project below to view its individual CPU, RAM, and storage utilization charts.
+            </span>
+          </article>
+        </div>
+      </section>
+
+      <!-- ===================== CREATE PROJECT ===================== -->
+      <div class="panel" id="create-panel" hidden>
+        <h2>Create project</h2>
+        <p class="muted">Provision a new project runtime environment.</p>
+        <form id="project" style="display:grid;gap:20px;grid-template-columns:1fr">
+
+          <!-- Project name -->
+          <label style="display:grid;gap:8px;font-size:13px;font-weight:600">
+            Project name
+            <input name="name" pattern="[a-z0-9-]+" placeholder="my-storefront" required style="font:14px 'DM Mono',monospace;border:1px solid #adb3a5;background:#fff;padding:12px;border-radius:5px">
+          </label>
+
+          <!-- Technology Selector -->
+          <div>
+            <p style="font-size:13px;font-weight:600;margin:0 0 10px">Technology / Framework</p>
+            <div class="tech-selector-grid" id="tech-grid">
+              <div class="tech-card selected" data-tech="php" onclick="selectTech('php')">
+                <div class="tech-card-icon">🐘</div>
+                <div class="tech-card-name">PHP</div>
+              </div>
+              <div class="tech-card" data-tech="html" onclick="selectTech('html')">
+                <div class="tech-card-icon">🌐</div>
+                <div class="tech-card-name">HTML / CSS</div>
+              </div>
+              <div class="tech-card coming-soon" onclick="showComingSoon('Node.js')">
+                <div class="coming-soon-badge">Soon</div>
+                <div class="tech-card-icon">🟢</div>
+                <div class="tech-card-name">Node.js</div>
+              </div>
+              <div class="tech-card coming-soon" onclick="showComingSoon('Next.js')">
+                <div class="coming-soon-badge">Soon</div>
+                <div class="tech-card-icon">▲</div>
+                <div class="tech-card-name">Next.js</div>
+              </div>
+              <div class="tech-card coming-soon" onclick="showComingSoon('Nest.js')">
+                <div class="coming-soon-badge">Soon</div>
+                <div class="tech-card-icon">🐈</div>
+                <div class="tech-card-name">Nest.js</div>
+              </div>
+              <div class="tech-card coming-soon" onclick="showComingSoon('Express')">
+                <div class="coming-soon-badge">Soon</div>
+                <div class="tech-card-icon">⚡</div>
+                <div class="tech-card-name">Express</div>
+              </div>
+              <div class="tech-card coming-soon" onclick="showComingSoon('Vite.js')">
+                <div class="coming-soon-badge">Soon</div>
+                <div class="tech-card-icon">🔥</div>
+                <div class="tech-card-name">Vite.js</div>
+              </div>
+              <div class="tech-card coming-soon" onclick="showComingSoon('Laravel')">
+                <div class="coming-soon-badge">Soon</div>
+                <div class="tech-card-icon">🎈</div>
+                <div class="tech-card-name">Laravel</div>
+              </div>
+              <div class="tech-card coming-soon" onclick="showComingSoon('WordPress')">
+                <div class="coming-soon-badge">Soon</div>
+                <div class="tech-card-icon">🔷</div>
+                <div class="tech-card-name">WordPress</div>
+              </div>
+              <div class="tech-card coming-soon" onclick="showComingSoon('Python')">
+                <div class="coming-soon-badge">Soon</div>
+                <div class="tech-card-icon">🐍</div>
+                <div class="tech-card-name">Python</div>
+              </div>
+              <div class="tech-card coming-soon" onclick="showComingSoon('Django')">
+                <div class="coming-soon-badge">Soon</div>
+                <div class="tech-card-icon">🎸</div>
+                <div class="tech-card-name">Django</div>
+              </div>
+              <div class="tech-card coming-soon" onclick="showComingSoon('Flask')">
+                <div class="coming-soon-badge">Soon</div>
+                <div class="tech-card-icon">🫙</div>
+                <div class="tech-card-name">Flask</div>
+              </div>
+            </div>
+            <input type="hidden" name="technology" id="tech-hidden" value="php">
+          </div>
+
+          <!-- PHP version -->
+          <div id="php-version-row">
+            <label style="display:grid;gap:8px;font-size:13px;font-weight:600">
+              PHP Version
+              <select name="phpVersion" style="font:14px 'DM Mono',monospace;border:1px solid #adb3a5;background:#fff;padding:12px;border-radius:5px">
+                <option value="8.5">PHP 8.5 (latest)</option>
+                <option value="8.4">PHP 8.4</option>
+                <option value="8.3">PHP 8.3</option>
+                <option value="8.2">PHP 8.2</option>
+                <option value="8.1">PHP 8.1</option>
+              </select>
+            </label>
+          </div>
+
+          <div id="create-html-code-row" hidden style="margin:10px 0">
+            <label style="display:grid;gap:6px;font-size:12px;font-weight:600">Optional HTML for blank project
+              <textarea id="create-html-code" rows="6" placeholder="Paste HTML code here, or leave blank for the starter index.html" style="font:12px/1.5 monospace;padding:10px;border:1px solid #aeb6a8;border-radius:6px"></textarea>
+            </label>
+          </div>
+          <!-- ===== SOURCE SECTION ===== -->
+          <div>
+            <p style="font-size:13px;font-weight:600;margin:0 0 8px">Source</p>
+            <div class="git-source-section">
+
+              <!-- Top-level source type tabs -->
+              <div class="git-source-type-tabs" id="create-source-tabs">
+                <button type="button" class="git-tab-btn active" data-src="blank">⚡ Blank Project</button>
+                <button type="button" class="git-tab-btn" data-src="zip">📦 Upload ZIP</button>
+                <button type="button" class="git-tab-btn" data-src="git">🔗 Git Repository</button>
+              </div>
+              <input type="hidden" name="sourceType" id="create-source-type" value="blank">
+              <input type="hidden" name="selectedProvider" id="create-selected-provider" value="">
+              <input type="hidden" name="connectMethod" id="create-connect-method" value="oauth">
+
+              <!-- ZIP upload panel -->
+              <div id="create-zip-panel" style="display:none">
+                <label style="display:grid;gap:6px;font-size:12px;font-weight:600">
+                  ZIP File
+                  <input name="source" type="file" accept=".zip" style="font:13px 'DM Mono',monospace;padding:8px;border:1px solid #adb3a5;border-radius:5px;background:#fff">
+                </label>
+              </div>
+
+              <!-- Git Repository panel -->
+              <div id="create-git-panel" style="display:none">
+
+                <!-- Step 1: Choose Git Provider -->
+                <div>
+                  <p style="font:11px 'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;color:#68716a;margin:0 0 10px">Step 1 — Choose Git Provider</p>
+                   <div class="provider-grid">
+                     <div class="provider-card" data-provider="github" onclick="selectProvider('github','create')">
+                       <div class="provider-card-icon">
+                         <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+                       </div>
+                       <div>GitHub</div>
+                     </div>
+                     <div class="provider-card" data-provider="gitlab" onclick="selectProvider('gitlab','create')">
+                       <div class="provider-card-icon" style="color:#fc6d26">
+                         <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 0 1-.3-.94l1.22-3.78 2.44-7.51A.42.42 0 0 1 4.82 2a.43.43 0 0 1 .58 0 .42.42 0 0 1 .11.18l2.44 7.49h8.1l2.44-7.51A.42.42 0 0 1 18.6 2a.43.43 0 0 1 .58 0 .42.42 0 0 1 .11.18l2.44 7.51 1.22 3.75a.84.84 0 0 1-.35.94z"/></svg>
+                       </div>
+                       <div>GitLab</div>
+                     </div>
+                     <div class="provider-card" data-provider="bitbucket" onclick="selectProvider('bitbucket','create')">
+                       <div class="provider-card-icon" style="color:#0052cc">
+                         <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M.778 1.213a.768.768 0 0 0-.768.892l3.263 19.81c.084.5.515.868 1.022.873H19.95a.772.772 0 0 0 .77-.646l3.27-20.03a.768.768 0 0 0-.768-.892zm14.52 14.317h-6.46l-1.542-8.051h9.464z"/></svg>
+                       </div>
+                       <div>Bitbucket</div>
+                     </div>
+                     <div class="provider-card" data-provider="azure" onclick="selectProvider('azure','create')">
+                       <div class="provider-card-icon" style="color:#0078d4">
+                         <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M0 17.717l2.008-.555V6.623L.047 6.04l-.047.23v11.37zm18.48-14.08L10.8.002 4.57 5.453v2.971L18.48 3.637zm1.04.923l4.48 3.54v7.48l-4.48 1.74V4.56zm-4.48 14.95L7.2 24l-6.48-3.77v-2.32l13.32.6zm-14-5.96l2.84 1 8.56-7.08v3.56l-8.56 8.12-2.84-.88V13.55z"/></svg>
+                       </div>
+                       <div>Azure DevOps</div>
+                     </div>
+                     <div class="provider-card" data-provider="gitea" onclick="selectProvider('gitea','create')">
+                       <div class="provider-card-icon" style="color:#609926">
+                         <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M20.302 12.548a5.184 5.184 0 0 0-.983-3.032L12.607.491a.758.758 0 0 0-1.212 0L4.683 9.516a5.207 5.207 0 0 0-.983 3.032v5.27A2.184 2.184 0 0 0 5.88 20h12.24a2.184 2.184 0 0 0 2.18-2.182zM12 17.25a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm1.5-5.75h-3l-.75-4.5h4.5z"/></svg>
+                       </div>
+                       <div>Gitea / Self-hosted</div>
+                     </div>
+                     <div class="provider-card" data-provider="other" onclick="selectProvider('other','create')">
+                       <div class="provider-card-icon" style="color:#526059">
+                         <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M5.559 8.855c.166 1.461 1.204 2.379 2.33 2.828l.04.013a4.978 4.978 0 0 0-.154.571c-.24 1.14-.024 2.245.737 3.114.756.862 1.927 1.234 3.019 1.105.042.44.16.883.38 1.297.877 1.624 2.846 2.228 4.476 1.349l1.56-.841A3.25 3.25 0 0 0 19.158 13l-1.56.841a1.251 1.251 0 0 1-1.723-.52 1.247 1.247 0 0 1 .519-1.698l1.56-.84A3.249 3.249 0 0 0 16.627 6l-1.56.841a1.25 1.25 0 0 1-1.204-2.192l1.56-.84A3.249 3.249 0 0 0 13.584.5a3.262 3.262 0 0 0-2.872.67L9.04 2.74A3.25 3.25 0 0 0 7.888 6.5c0 .254.031.508.092.754a5.026 5.026 0 0 0-2.42 1.601z"/></svg>
+                       </div>
+                       <div>Other / Custom</div>
+                     </div>
+                   </div>
+                </div>
+
+                <!-- Step 2: Connection method — only shown after provider is selected -->
+                <div id="create-connect-step" style="display:none">
+                  <p style="font:11px 'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;color:#68716a;margin:0 0 10px">Step 2 — Connect Method</p>
+                  <div class="connect-method-tabs">
+                    <button type="button" class="connect-method-btn active" data-method="oauth" onclick="setConnectMethod('oauth','create')">
+                      🔗 OAuth / Connect Account
+                    </button>
+                    <button type="button" class="connect-method-btn" data-method="token" onclick="setConnectMethod('token','create')">
+                      🔑 Access Token (PAT)
+                    </button>
+                    <button type="button" class="connect-method-btn" data-method="public" onclick="setConnectMethod('public','create')">
+                      🌍 Public Repo URL
+                    </button>
+                  </div>
+
+                  <!-- OAuth Panel (3 states: idle → authorizing → connected) -->
+                  <div id="create-oauth-panel" style="margin-top:12px">
+                    <div class="oauth-connect-box">
+
+                      <!-- STATE 1: Idle — show connect button -->
+                      <div id="create-oauth-idle">
+                        <button type="button" class="oauth-provider-btn" id="create-oauth-connect-btn" onclick="startOAuth('create')">
+                          <span id="create-provider-icon-lg" style="width:28px;height:28px;display:flex;align-items:center">
+                            <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+                          </span>
+                          <span>
+                            Connect <span id="create-provider-name">GitHub</span> Account
+                            <span class="btn-desc">Authorize Deployigo via OAuth — your password is never shared</span>
+                          </span>
+                        </button>
+                      </div>
+
+                      <!-- STATE 2: Authorizing — popup opened, waiting -->
+                      <div id="create-oauth-authorizing" style="display:none">
+                        <div style="display:flex;align-items:flex-start;gap:14px;padding:14px;background:#fff;border:1px solid var(--line);border-radius:8px">
+                          <div style="flex-shrink:0;margin-top:2px">
+                            <div class="oauth-waiting-spinner"></div>
+                          </div>
+                          <div style="flex:1">
+                            <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:4px">Waiting for <span class="create-auth-provider-name">GitHub</span> authorization…</div>
+                            <div style="font:11px 'DM Mono',monospace;color:#526059;line-height:1.6">
+                              A popup window has been opened. Please sign in to <span class="create-auth-provider-name">GitHub</span> and click <strong>"Authorize Deployigo"</strong>.<br>
+                              If the popup was blocked, <a href="#" id="create-oauth-manual-link" target="_blank" style="color:var(--orange)">click here to open it manually</a>.
+                            </div>
+                            <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+                              <button type="button" class="oauth-provider-btn" style="flex:none;padding:8px 14px;font-size:12px" onclick="cancelOAuth('create')">✕ Cancel</button>
+                              <button type="button" class="oauth-provider-btn" style="flex:none;padding:8px 14px;font-size:12px;background:var(--acid);border-color:var(--ink)" onclick="completeOAuth('create')">✓ I've Authorized — Continue</button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- STATE 3: Connected — show account + repo dropdown + branch -->
+                      <div id="create-oauth-connected" style="display:none">
+                        <div class="oauth-connected-row">
+                          <div class="connected-info">
+                            <span class="connected-name" id="create-oauth-username">username</span>
+                            <span class="connected-sub">✅ Connected via OAuth · <span id="create-provider-name-connected">GitHub</span></span>
+                          </div>
+                          <button type="button" class="disconnect-btn" onclick="disconnectOAuth('create')">Disconnect</button>
+                        </div>
+                        <div style="display:grid;gap:10px;margin-top:12px">
+                          <label style="display:grid;gap:6px;font-size:12px;font-weight:600">
+                            Organization / Account
+                            <select id="create-oauth-org-select" onchange="onOAuthOrgFilterChange('create')" style="font:13px 'DM Mono',monospace;padding:10px 12px;border:1px solid #adb3a5;border-radius:5px;background:#fff">
+                              <option value="all">All Accounts & Organizations</option>
+                            </select>
+                          </label>
+                          <label style="display:grid;gap:6px;font-size:12px;font-weight:600">
+                            Select Repository
+                            <select name="oauthRepoSelect" id="create-oauth-repo-select" onchange="onOAuthRepoSelectChange('create')" style="font:13px 'DM Mono',monospace;padding:10px 12px;border:1px solid #adb3a5;border-radius:5px;background:#fff">
+                              <option value="">— Select a repository —</option>
+                            </select>
+                          </label>
+
+                          <label id="create-oauth-repo-url-wrapper" style="display:grid;gap:6px;font-size:12px;font-weight:600">
+                            Or Repository URL
+                            <input name="oauthRepoUrl" type="url" id="create-oauth-repo-url" placeholder="https://github.com/yourorg/your-repo" style="font:13px 'DM Mono',monospace;padding:10px 12px;border:1px solid #adb3a5;border-radius:5px;background:#fff">
+                            <span style="font:11px 'DM Mono',monospace;color:#68716a">Full URL of your repository from <span id="create-provider-name-repo">GitHub</span></span>
+                          </label>
+                          <label style="display:grid;gap:6px;font-size:12px;font-weight:600">
+                            Branch
+                            <select name="oauthBranchSelect" id="create-oauth-branch-select" style="font:13px 'DM Mono',monospace;padding:10px 12px;border:1px solid #adb3a5;border-radius:5px;background:#fff">
+                              <option value="main">main</option>
+                              <option value="master">master</option>
+                              <option value="dev">dev</option>
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+
+
+                      <p class="oauth-note" style="margin-top:10px">
+                        🔒 Deployigo uses OAuth 2.0 — your password is never stored. Works like <strong>Vercel</strong>, <strong>Netlify</strong> and <strong>AWS CodePipeline</strong>.
+                      </p>
+                    </div>
+                  </div>
+
+                  <!-- PAT Panel -->
+                  <div id="create-pat-panel" style="display:none;margin-top:12px">
+                    <div class="git-fields">
+                      <label>
+                        Repository URL
+                        <input name="repoUrl" type="url" placeholder="https://github.com/yourorg/repo" style="font:13px 'DM Mono',monospace;padding:10px 12px;border:1px solid #adb3a5;border-radius:5px;background:#fff">
+                      </label>
+                      <label>
+                        Branch
+                        <input name="repoBranch" type="text" placeholder="main" style="font:13px 'DM Mono',monospace;padding:10px 12px;border:1px solid #adb3a5;border-radius:5px;background:#fff">
+                      </label>
+                      <label>
+                        Personal Access Token (PAT)
+                        <input name="repoToken" type="password" placeholder="ghp_xxxxxxxxxxxx / glpat-xxxxx / ATBBxxxxxxxxx" autocomplete="new-password" style="font:13px 'DM Mono',monospace;padding:10px 12px;border:1px solid #adb3a5;border-radius:5px;background:#fff">
+                        <span class="pat-hint" id="create-pat-hint">
+                          Generate at: <a href="https://github.com/settings/tokens" target="_blank">GitHub Tokens</a> · <a href="https://gitlab.com/-/profile/personal_access_tokens" target="_blank">GitLab Tokens</a> · <a href="https://bitbucket.org/account/settings/app-passwords/" target="_blank">Bitbucket App Passwords</a><br>
+                          Needs <strong>repo</strong> (read) scope. Stored encrypted.
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- Public URL Panel -->
+                  <div id="create-public-panel" style="display:none;margin-top:12px">
+                    <div class="git-fields">
+                      <label>
+                        Public Repository URL
+                        <input name="publicRepoUrl" type="url" placeholder="https://github.com/user/public-repo" style="font:13px 'DM Mono',monospace;padding:10px 12px;border:1px solid #adb3a5;border-radius:5px;background:#fff">
+                      </label>
+                      <label>
+                        Branch
+                        <input name="publicRepoBranch" type="text" placeholder="main" style="font:13px 'DM Mono',monospace;padding:10px 12px;border:1px solid #adb3a5;border-radius:5px;background:#fff">
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Auto-Build (shown only for git source) -->
+          <div class="autobuild-section" id="create-autobuild-section" style="opacity:0.4;pointer-events:none">
+            <div class="autobuild-label">
+              <strong>⚡ Auto-Build on Push</strong>
+              <span>Automatically deploy when you push code to the connected repository</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" name="autoBuild" id="create-autobuild-toggle">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <button class="button" type="submit">Create project</button>
+          <p id="message"></p>
+        </form>
+      </div>
+
+      <!-- ===================== PROJECTS LIST ===================== -->
+      <section id="projects-section">
+        <h2>Existing Projects</h2>
+        <div id="projects" class="project-list"></div>
+      </section>
+
+    </section>
+  </div>
+</main>
+
+<!-- ===================== EDIT PROJECT MODAL ===================== -->
+<div id="editor" class="modal" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <div>
+        <p class="eyebrow">Project settings</p>
+        <h2>Edit project</h2>
+      </div>
+      <button class="icon-button" id="close-editor" type="button" aria-label="Close">×</button>
+    </div>
+    <form id="edit-project" style="display:grid;gap:16px">
+      <input type="hidden" name="id">
+      <input type="hidden" name="editSourceType" id="edit-source-type" value="keep">
+      <input type="hidden" name="editConnectMethod" id="edit-connect-method" value="oauth">
+      <input type="hidden" name="editProvider" id="edit-selected-provider" value="">
+
+      <label style="display:grid;gap:6px;font-size:13px;font-weight:600">
+        Project name
+        <input name="name" pattern="[a-z0-9-]+" required style="font:14px 'DM Mono',monospace;border:1px solid #adb3a5;background:#fff;padding:10px 14px;border-radius:4px">
+      </label>
+      <label id="edit-php-version-row" style="display:grid;gap:6px;font-size:13px;font-weight:600">
+        PHP version
+        <select name="phpVersion" style="font:14px 'DM Mono',monospace;border:1px solid #adb3a5;background:#fff;padding:10px 14px;border-radius:4px">
+          <option value="8.5">PHP 8.5 (latest)</option>
+          <option value="8.4">PHP 8.4</option>
+          <option value="8.3">PHP 8.3</option>
+          <option value="8.2">PHP 8.2</option>
+          <option value="8.1">PHP 8.1</option>
+        </select>
+      </label>
+
+      <!-- Update Source / Repository -->
+      <div>
+        <p style="font-size:13px;font-weight:600;margin:0 0 8px">Update Source / Repository</p>
+        <div class="git-source-section">
+          <div class="git-source-type-tabs" id="edit-source-tabs">
+            <button type="button" class="git-tab-btn active" data-src="keep">Keep Current</button>
+            <button type="button" class="git-tab-btn" data-src="git">🔗 Change Repository</button>
+          </div>
+
+          <!-- Change repo panel -->
+          <div id="edit-git-panel" style="display:none">
+            <!-- Provider grid -->
+            <div>
+              <p style="font:11px 'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;color:#68716a;margin:0 0 10px">Git Provider</p>
+              <div class="provider-grid">
+                <div class="provider-card" data-provider="github" onclick="selectProvider('github','edit')">
+                  <div class="provider-card-icon"><svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg></div>
+                  <div>GitHub</div>
+                </div>
+                <div class="provider-card" data-provider="gitlab" onclick="selectProvider('gitlab','edit')">
+                  <div class="provider-card-icon" style="color:#fc6d26"><svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 0 1-.3-.94l1.22-3.78 2.44-7.51A.42.42 0 0 1 4.82 2a.43.43 0 0 1 .58 0 .42.42 0 0 1 .11.18l2.44 7.49h8.1l2.44-7.51A.42.42 0 0 1 18.6 2a.43.43 0 0 1 .58 0 .42.42 0 0 1 .11.18l2.44 7.51 1.22 3.75a.84.84 0 0 1-.35.94z"/></svg></div>
+                  <div>GitLab</div>
+                </div>
+                <div class="provider-card" data-provider="bitbucket" onclick="selectProvider('bitbucket','edit')">
+                  <div class="provider-card-icon" style="color:#0052cc"><svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M.778 1.213a.768.768 0 0 0-.768.892l3.263 19.81c.084.5.515.868 1.022.873H19.95a.772.772 0 0 0 .77-.646l3.27-20.03a.768.768 0 0 0-.768-.892zm14.52 14.317h-6.46l-1.542-8.051h9.464z"/></svg></div>
+                  <div>Bitbucket</div>
+                </div>
+                <div class="provider-card" data-provider="azure" onclick="selectProvider('azure','edit')">
+                  <div class="provider-card-icon" style="color:#0078d4"><svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M0 17.717l2.008-.555V6.623L.047 6.04l-.047.23v11.37zm18.48-14.08L10.8.002 4.57 5.453v2.971L18.48 3.637zm1.04.923l4.48 3.54v7.48l-4.48 1.74V4.56zm-4.48 14.95L7.2 24l-6.48-3.77v-2.32l13.32.6zm-14-5.96l2.84 1 8.56-7.08v3.56l-8.56 8.12-2.84-.88V13.55z"/></svg></div>
+                  <div>Azure DevOps</div>
+                </div>
+                <div class="provider-card" data-provider="gitea" onclick="selectProvider('gitea','edit')">
+                  <div class="provider-card-icon" style="color:#609926"><svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M20.302 12.548a5.184 5.184 0 0 0-.983-3.032L12.607.491a.758.758 0 0 0-1.212 0L4.683 9.516a5.207 5.207 0 0 0-.983 3.032v5.27A2.184 2.184 0 0 0 5.88 20h12.24a2.184 2.184 0 0 0 2.18-2.182zM12 17.25a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm1.5-5.75h-3l-.75-4.5h4.5z"/></svg></div>
+                  <div>Gitea / Self-hosted</div>
+                </div>
+                <div class="provider-card" data-provider="other" onclick="selectProvider('other','edit')">
+                  <div class="provider-card-icon" style="color:#526059"><svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M5.559 8.855c.166 1.461 1.204 2.379 2.33 2.828l.04.013a4.978 4.978 0 0 0-.154.571c-.24 1.14-.024 2.245.737 3.114.756.862 1.927 1.234 3.019 1.105.042.44.16.883.38 1.297.877 1.624 2.846 2.228 4.476 1.349l1.56-.841A3.25 3.25 0 0 0 19.158 13l-1.56.841a1.251 1.251 0 0 1-1.723-.52 1.247 1.247 0 0 1 .519-1.698l1.56-.84A3.249 3.249 0 0 0 16.627 6l-1.56.841a1.25 1.25 0 0 1-1.204-2.192l1.56-.84A3.249 3.249 0 0 0 13.584.5a3.262 3.262 0 0 0-2.872.67L9.04 2.74A3.25 3.25 0 0 0 7.888 6.5c0 .254.031.508.092.754a5.026 5.026 0 0 0-2.42 1.601z"/></svg></div>
+                  <div>Other / Custom</div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Connect method after provider selected -->
+            <div id="edit-connect-step" style="display:none">
+              <p style="font:11px 'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;color:#68716a;margin:0 0 10px">Connect Method</p>
+              <div class="connect-method-tabs">
+                <button type="button" class="connect-method-btn active" data-method="oauth" onclick="setConnectMethod('oauth','edit')">🔗 OAuth / Connect Account</button>
+                <button type="button" class="connect-method-btn" data-method="token" onclick="setConnectMethod('token','edit')">🔑 Access Token (PAT)</button>
+                <button type="button" class="connect-method-btn" data-method="public" onclick="setConnectMethod('public','edit')">🌍 Public Repo URL</button>
+              </div>
+
+              <!-- OAuth Panel (3-state) -->
+              <div id="edit-oauth-panel" style="margin-top:12px">
+                <div class="oauth-connect-box">
+
+                  <!-- STATE 1: Idle -->
+                  <div id="edit-oauth-idle">
+                    <button type="button" class="oauth-provider-btn" onclick="startOAuth('edit')">
+                      <span id="edit-provider-icon-lg" style="width:26px;height:26px;display:flex;align-items:center">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+                      </span>
+                      <span>
+                        Connect <span id="edit-provider-name">GitHub</span> Account
+                        <span class="btn-desc">Authorize Deployigo via OAuth — your password is never shared</span>
+                      </span>
+                    </button>
+                  </div>
+
+                  <!-- STATE 2: Authorizing -->
+                  <div id="edit-oauth-authorizing" style="display:none">
+                    <div style="display:flex;align-items:flex-start;gap:14px;padding:14px;background:#fff;border:1px solid var(--line);border-radius:8px">
+                      <div style="flex-shrink:0;margin-top:2px"><div class="oauth-waiting-spinner"></div></div>
+                      <div style="flex:1">
+                        <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:4px">Waiting for <span class="edit-auth-provider-name">GitHub</span> authorization…</div>
+                        <div style="font:11px 'DM Mono',monospace;color:#526059;line-height:1.6">
+                          Please sign in to <span class="edit-auth-provider-name">GitHub</span> in the popup and click <strong>"Authorize Deployigo"</strong>.<br>
+                          If blocked, <a href="#" id="edit-oauth-manual-link" target="_blank" style="color:var(--orange)">open it manually</a>.
+                        </div>
+                        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+                          <button type="button" class="oauth-provider-btn" style="flex:none;padding:8px 14px;font-size:12px" onclick="cancelOAuth('edit')">✕ Cancel</button>
+                          <button type="button" class="oauth-provider-btn" style="flex:none;padding:8px 14px;font-size:12px;background:var(--acid);border-color:var(--ink)" onclick="completeOAuth('edit')">✓ I've Authorized — Continue</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- STATE 3: Connected -->
+                  <div id="edit-oauth-connected" style="display:none">
+                    <div class="oauth-connected-row">
+                      <div class="connected-info">
+                        <span class="connected-name" id="edit-oauth-username">username</span>
+                        <span class="connected-sub">✅ Connected via OAuth · <span id="edit-provider-name-connected">GitHub</span></span>
+                      </div>
+                      <button type="button" class="disconnect-btn" onclick="disconnectOAuth('edit')">Disconnect</button>
+                    </div>
+                    <div style="display:grid;gap:10px;margin-top:12px">
+                      <label style="display:grid;gap:6px;font-size:12px;font-weight:600">
+                        Organization / Account
+                        <select id="edit-oauth-org-select" onchange="onOAuthOrgFilterChange('edit')" style="font:13px 'DM Mono',monospace;padding:10px 12px;border:1px solid #adb3a5;border-radius:5px;background:#fff">
+                          <option value="all">All Accounts & Organizations</option>
+                        </select>
+                      </label>
+                      <label style="display:grid;gap:6px;font-size:12px;font-weight:600">
+                        Select Repository
+                        <select name="editOauthRepoSelect" id="edit-oauth-repo-select" onchange="onOAuthRepoSelectChange('edit')" style="font:13px 'DM Mono',monospace;padding:10px 12px;border:1px solid #adb3a5;border-radius:5px;background:#fff">
+                          <option value="">— Select a repository —</option>
+                        </select>
+                      </label>
+
+                      <label id="edit-oauth-repo-url-wrapper" style="display:grid;gap:6px;font-size:12px;font-weight:600">
+                        Or Repository URL
+                        <input name="editOauthRepoUrl" type="url" id="edit-oauth-repo-url" placeholder="https://github.com/yourorg/your-repo" style="font:13px 'DM Mono',monospace;padding:10px 12px;border:1px solid #adb3a5;border-radius:5px;background:#fff">
+                        <span style="font:11px 'DM Mono',monospace;color:#68716a">Full URL from <span id="edit-provider-name-repo">GitHub</span></span>
+                      </label>
+                      <label style="display:grid;gap:6px;font-size:12px;font-weight:600">
+                        Branch
+                        <select name="editOauthBranchSelect" id="edit-oauth-branch-select" style="font:13px 'DM Mono',monospace;padding:10px 12px;border:1px solid #adb3a5;border-radius:5px;background:#fff">
+                          <option value="main">main</option>
+                          <option value="master">master</option>
+                          <option value="dev">dev</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+
+
+                  <p class="oauth-note" style="margin-top:10px">🔒 OAuth 2.0 — your password is never stored or shared with Deployigo.</p>
+                </div>
+              </div>
+
+              <!-- PAT Panel -->
+              <div id="edit-pat-panel" style="display:none;margin-top:12px">
+                <div class="git-fields">
+                  <label>
+                    Repository URL
+                    <input name="repoUrl" type="url" placeholder="https://github.com/yourorg/repo" style="font:13px 'DM Mono',monospace;padding:10px 12px;border:1px solid #adb3a5;border-radius:5px;background:#fff">
+                  </label>
+                  <label>
+                    Branch
+                    <input name="repoBranch" type="text" placeholder="main" style="font:13px 'DM Mono',monospace;padding:10px 12px;border:1px solid #adb3a5;border-radius:5px;background:#fff">
+                  </label>
+                  <label>
+                    Access Token (PAT) — leave blank to keep existing
+                    <input name="repoToken" type="password" placeholder="ghp_ / glpat- / ATBBxx" autocomplete="new-password" style="font:13px 'DM Mono',monospace;padding:10px 12px;border:1px solid #adb3a5;border-radius:5px;background:#fff">
+                    <span class="pat-hint">Works with GitHub · GitLab · Bitbucket · Azure DevOps. Token stored encrypted.</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Public URL Panel -->
+              <div id="edit-public-panel" style="display:none;margin-top:12px">
+                <div class="git-fields">
+                  <label>
+                    Public Repository URL
+                    <input name="publicRepoUrl" type="url" placeholder="https://github.com/user/public-repo" style="font:13px 'DM Mono',monospace;padding:10px 12px;border:1px solid #adb3a5;border-radius:5px;background:#fff">
+                  </label>
+                  <label>
+                    Branch
+                    <input name="publicRepoBranch" type="text" placeholder="main" style="font:13px 'DM Mono',monospace;padding:10px 12px;border:1px solid #adb3a5;border-radius:5px;background:#fff">
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Auto-Build -->
+      <div class="autobuild-section">
+        <div class="autobuild-label">
+          <strong>⚡ Auto-Build on Push</strong>
+          <span>Automatically deploy when code is pushed to the repo</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" name="autoBuild" id="edit-autobuild-toggle">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <!-- Webhook URL -->
+      <div id="edit-webhook-section" style="display:none">
+        <p style="font-size:12px;font-weight:600;margin:0 0 6px;color:#68716a">📡 Webhook URL — add this to your repo settings:</p>
+        <div class="webhook-url-box">
+          <code id="edit-webhook-url"></code>
+          <button type="button" class="copy-btn" id="edit-copy-webhook">Copy</button>
+        </div>
+        <p style="font:11px 'DM Mono',monospace;color:#68716a;margin-top:6px">
+          GitHub/GitLab/Bitbucket → Repo Settings → Webhooks → Add webhook.<br>
+          Set Content-Type: <code>application/json</code>. Select: push events only.
+        </p>
+      </div>
+
+      <div class="modal-actions">
+        <button class="button ghost" id="cancel-editor" type="button">Cancel</button>
+        <button class="button" type="submit">Save changes</button>
+      </div>
+      <p id="edit-message"></p>
+    </form>
+  </div>
+</div>
+
+<!-- ===================== PROJECT DETAIL MODAL ===================== -->
+<div id="project-modal" class="modal" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <div>
+        <p class="eyebrow">Project overview</p>
+        <h2 id="modal-project-name">Project Details</h2>
+      </div>
+      <button class="icon-button" id="close-project-modal" type="button" aria-label="Close">×</button>
+    </div>
+    <div class="detail-grid">
+      <div class="detail-item"><label>Project Name</label><span id="modal-detail-name"></span></div>
+      <div class="detail-item"><label>Technology</label><span id="modal-detail-tech"></span></div>
+      <div class="detail-item"><label>Engine / Version</label><span id="modal-detail-engine"></span></div>
+      <div class="detail-item"><label>Status</label><span id="modal-detail-status"></span></div>
+      <p id="modal-source-error" role="alert" hidden style="grid-column:1/-1;color:#bb3120;white-space:pre-wrap"></p>
+      <p id="modal-source-notes" hidden style="grid-column:1/-1;color:#546b38;white-space:pre-wrap"></p>
+      <div class="detail-item"><label>Storage Used</label><span id="modal-detail-storage">0 B</span></div>
+      <div class="detail-item"><label>Allocated RAM</label><span id="modal-detail-ram">1 GB</span></div>
+      <div class="detail-item"><label>CPU Cores</label><span id="modal-detail-cpu">1 vCPU</span></div>
+      <div class="detail-item"><label>Auto-Build</label><span id="modal-detail-autobuild">—</span></div>
+      <div class="detail-item" style="grid-column:1/-1"><label>Live URL</label><a id="modal-detail-url" href="#" target="_blank" style="color:var(--orange);font-weight:600"></a></div>
+      <div class="detail-item" id="modal-repo-row" style="grid-column:1/-1;display:none"><label>Repository</label><span id="modal-detail-repo" style="font:12px 'DM Mono',monospace;word-break:break-all"></span></div>
+    </div>
+    <div class="project-monitoring">
+      <h4>📊 Resource Utilization</h4>
+      <div class="ring-charts-row" id="modal-ring-charts"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="button ghost" data-action="files" id="modal-act-files">📁 File Manager</button>
+      <button class="button ghost" data-action="logs" id="modal-act-logs">📋 Web Logs</button>
+      <button class="button ghost" data-action="terminal" id="modal-act-terminal">⌨️ Command Console</button>
+      <button class="button ghost" data-action="webhook" id="modal-act-webhook" hidden>⚡ Configure GitHub Webhook</button>
+      <button class="button ghost" data-action="verify-runtime" id="modal-act-verify-runtime">✅ Verify PHP Runtime</button>
+      <button class="button ghost" data-action="env" id="modal-act-env">🔑 Environment (.env)</button>
+      <button class="button ghost" data-action="database" id="modal-act-database">🗄️ Database Manager</button>
+      <button class="button ghost" data-action="cicd" id="modal-act-cicd">⚙️ Build Steps (CI/CD)</button>
+      <button class="button ghost" data-action="composer" id="modal-act-composer">📦 Composer Install</button>
+      <button class="button ghost" data-action="php-config" id="modal-act-php-config">⚙️ PHP Config</button>
+      <button class="button ghost" data-action="php-modules" id="modal-act-php-modules">🧩 PHP Extensions</button>
+
+      <button class="button ghost" data-action="restart" id="modal-act-restart">🔁 Restart</button>
+      <button class="button ghost" data-action="edit" id="modal-act-edit">Edit Settings</button>
+      <button class="button ghost" data-action="rebuild" id="modal-act-rebuild">Rebuild</button>
+      <button class="button ghost" data-action="toggle" id="modal-act-toggle">Disable</button>
+      <button class="button ghost" data-action="maintenance" id="modal-act-maint">Maintenance</button>
+      <button class="button danger" data-action="delete" id="modal-act-delete">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="webhook-modal" hidden><div class="modal-card" style="max-width:760px;width:96%"><div class="modal-head"><h2>GitHub webhook setup</h2><button class="icon-button" id="webhook-close" type="button" aria-label="Close">×</button></div><pre id="webhook-details" style="white-space:pre-wrap;word-break:break-all;font:12px/1.6 monospace"></pre><p class="muted">Webhook secrets are shown only when created or rotated.</p></div></div>
+<!-- Authenticated project command console; full PTY/WebSocket not yet implemented. -->
+<div class="modal" id="terminal-modal" hidden>
+  <div class="modal-card" style="max-width:780px;width:96%">
+    <div class="modal-head"><h2 id="terminal-project-name">Docker Command Console</h2><button type="button" id="terminal-close" class="icon-button" aria-label="Close">×</button></div>
+    <pre id="terminal-output" style="background:#111827;color:#e5e7eb;padding:16px;border-radius:8px;height:320px;overflow:auto;white-space:pre-wrap;word-break:break-word;font:12px/1.55 monospace"></pre>
+    <form id="terminal-form" style="display:flex;gap:8px"><input id="terminal-input" placeholder="Enter a command (e.g. pwd, composer --version)" autocomplete="off" maxlength="500" style="flex:1;font:13px monospace;padding:10px"><button class="button" id="terminal-run" type="submit">Run</button></form>
+    <p class="muted" style="font-size:12px">Single-command Docker console, not a PTY. HTML projects run in /usr/share/nginx/html; PHP projects run in /var/www/html. Commands require a deployed container. No SSH/FTP credentials are exposed.</p>
+  </div>
+</div>
+<!-- ===================== CONTAINER LOGS MODAL ===================== -->
+<div id="logs-modal" class="modal" hidden>
+  <div class="modal-card" style="max-width:720px;width:90%">
+    <div class="modal-head">
+      <div>
+        <p class="eyebrow">Runtime Diagnostics</p>
+        <h2 id="logs-modal-title">Web Access &amp; Error Logs</h2>
+      </div>
+      <button class="icon-button" id="close-logs-modal" type="button" aria-label="Close">×</button>
+    </div>
+    <div style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+      <span style="font-size:12px;color:var(--text-muted)">Live application stdout / stderr logs:</span>
+      <button type="button" class="button ghost" id="refresh-logs-btn" style="padding:4px 10px;font-size:12px">🔄 Refresh Logs</button>
+    </div>
+
+    <pre id="logs-console" style="background:#0d1117;color:#79c0ff;font:12px/1.5 'DM Mono',monospace;padding:16px;border-radius:6px;max-height:360px;overflow:auto;white-space:pre-wrap;word-break:break-all;border:1px solid #30363d;margin:0"></pre>
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="button" id="close-logs-btn" type="button">Close</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===================== PHP SETTINGS MODAL ===================== -->
+<div id="php-settings-modal" class="modal" hidden>
+  <div class="modal-card" style="max-width:580px">
+    <div class="modal-head">
+      <div>
+        <p class="eyebrow">PHP Directives &amp; ini Manager</p>
+        <h2 id="php-modal-title">Configure PHP Runtime</h2>
+      </div>
+      <button class="icon-button" id="close-php-settings" type="button" aria-label="Close">×</button>
+    </div>
+    <div class="security-banner" style="background:#f3f0e8;border:1px solid #c8c8b9;border-radius:6px;padding:12px 14px;margin-bottom:20px;font-size:12px;line-height:1.5">
+      <strong style="color:var(--ink)">🛡️ Security Isolation Policy:</strong> Safe PHP runtime directives can be adjusted below. System directives (such as <code>disable_functions</code>, <code>open_basedir</code>, and <code>extension</code>) are permanently locked to ensure container security.
+    </div>
+    <form id="php-settings-form">
+      <input type="hidden" name="id">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <label>Memory Limit (memory_limit)<select name="memory_limit"><option value="64M">64M</option><option value="128M">128M (Default)</option><option value="256M">256M</option><option value="512M">512M</option></select></label>
+        <label>Max Execution Time (sec)<input name="max_execution_time" type="number" min="10" max="300" placeholder="60"></label>
+        <label>Upload Max Filesize<select name="upload_max_filesize"><option value="2M">2M</option><option value="8M">8M</option><option value="16M">16M (Default)</option><option value="32M">32M</option><option value="64M">64M</option><option value="100M">100M</option></select></label>
+        <label>POST Max Size<select name="post_max_size"><option value="4M">4M</option><option value="16M">16M</option><option value="32M">32M (Default)</option><option value="64M">64M</option><option value="128M">128M</option></select></label>
+        <label>Display Errors (display_errors)<select name="display_errors"><option value="Off">Off (Production Safe)</option><option value="On">On (Debugging)</option></select></label>
+        <label>Default Timezone (date.timezone)<select name="date_timezone"><option value="UTC">UTC (Universal)</option><option value="America/New_York">America/New_York (EST)</option><option value="Europe/London">Europe/London (GMT)</option><option value="Asia/Kolkata">Asia/Kolkata (IST)</option><option value="Asia/Tokyo">Asia/Tokyo (JST)</option><option value="Australia/Sydney">Australia/Sydney (AEST)</option></select></label>
+        <label>Max Input Vars<input name="max_input_vars" type="number" min="1000" max="5000" placeholder="1000"></label>
+        <label>Session GC Lifetime (sec)<input name="session_gc_maxlifetime" type="number" min="1440" max="86400" placeholder="1440"></label>
+      </div>
+      <div class="modal-actions" style="margin-top:20px">
+        <button class="button ghost" id="cancel-php-settings" type="button">Cancel</button>
+        <button class="button" type="submit">Save PHP Settings</button>
+      </div>
+      <p id="php-settings-message" style="margin-top:12px;font:12px/1.4 'DM Mono',monospace"></p>
+    </form>
+  </div>
+</div>
+
+<!-- ===================== PHP MODULES MODAL ===================== -->
+<div id="php-modules-modal" class="modal" hidden>
+  <div class="modal-card" style="max-width:720px;max-height:85vh;overflow-y:auto">
+    <div class="modal-head">
+      <div>
+        <p class="eyebrow">PHP Extensions &amp; Drivers</p>
+        <h2 id="php-modules-title">Manage PHP Extensions</h2>
+      </div>
+      <button class="icon-button" id="close-php-modules" type="button" aria-label="Close">×</button>
+    </div>
+    <div class="security-banner" style="background:#f3f0e8;border:1px solid #c8c8b9;border-radius:6px;padding:12px 14px;margin-bottom:16px;font-size:12px;line-height:1.5">
+      <strong style="color:var(--ink)">🛡️ Anti-Hacking Security Lock:</strong> Toggle official database &amp; cache extensions (MySQL, PostgreSQL, MongoDB, Redis, Imagick). Custom arbitrary binary paths are blocked.
+    </div>
+    <div style="margin-bottom:16px">
+      <input id="ext-search-input" type="text" placeholder="🔍 Search extension (e.g. pgsql, mongo, redis, gd)..." style="width:100%;font:13px 'DM Mono',monospace;padding:10px 14px;border:1px solid #adb3a5;border-radius:6px">
+    </div>
+    <div id="php-modules-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px"></div>
+    <div class="modal-actions" style="margin-top:20px">
+      <button class="button" id="close-php-modules-btn" type="button">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== PROGRESS MODAL ===================== -->
+<div id="progress-modal" class="modal" hidden>
+  <div class="modal-card progress-card">
+    <div class="spinner"></div>
+    <p class="eyebrow" id="progress-eyebrow">System Operation</p>
+    <h2 id="progress-title" style="margin:4px 0 12px">Rebuilding Project...</h2>
+    <p id="progress-message" class="muted" style="margin-bottom:16px">Provisioning environment and compiling runtime dependencies.</p>
+    <div class="progress-container">
+      <div class="progress-bar" id="progress-bar-fill"></div>
+    </div>
+    <div class="progress-status">
+      <span id="progress-text">Starting operation...</span>
+      <b id="progress-percent">0%</b>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== DATABASE MANAGER MODAL ===================== -->
+<div id="database-modal" class="modal" hidden>
+  <div class="modal-card" style="max-width:640px;width:90%">
+    <div class="modal-head">
+      <div>
+        <p class="eyebrow">Database Provisioning</p>
+        <h2 id="db-modal-title">🗄️ Database Manager</h2>
+      </div>
+      <button class="icon-button" id="close-db-modal" type="button" aria-label="Close">×</button>
+    </div>
+    <p id="db-feedback" role="status" class="muted" style="white-space:pre-wrap"></p>
+    <section id="db-existing-panel" class="db-management-panel" hidden>
+      <div class="db-management-title"><strong>Connected database</strong><span id="db-connection-status" class="badge">Details available</span></div>
+      <div id="db-connection-summary" class="db-summary-grid"></div>
+      <div class="db-button-row"><button class="button ghost" id="db-reveal-credentials" type="button">🔐 Reveal connection details &amp; password</button><button class="button ghost" id="db-rotate-password" type="button">🔄 Change password</button></div>
+      <pre id="db-secret-details" hidden class="db-console"></pre>
+      <p class="db-security-note">Managed databases use an internal Docker network. Remote access is OFF. An outside computer cannot connect to the internal hostname. Remote access requires an explicit network/security feature not yet available.</p>
+      <hr>
+      <h3>Database browser <small style="font-weight:400">(read-only, 50 rows max)</small></h3>
+      <p class="muted">Select a table to preview data, similar to phpMyAdmin / pgAdmin. MongoDB browsing is not yet supported.</p>
+      <div class="db-button-row"><button class="button ghost" type="button" id="db-list-tables">↻ Load tables</button><span class="muted" id="db-browser-state"></span></div>
+      <div id="db-browser-tables" class="db-table-tabs"></div>
+      <div id="db-browser-result" class="db-table-wrap"></div>
+      <h3>SQL backup and restore <small>(prototype limits)</small></h3>
+      <div class="db-button-row"><button type="button" class="button ghost" id="db-export-sql">⬇ Export .sql</button><label class="button ghost" style="font-size:13px;cursor:pointer">⬆ Import .sql<input id="db-import-sql" type="file" accept=".sql,text/plain" hidden></label></div>
+      <p class="db-security-note">SQL export limited to 4 MB and import to 1 MB. Import executes SQL against your selected managed database and can overwrite records. Make a backup before importing. This is not yet a full phpMyAdmin/pgAdmin replacement.</p>
+    </section>
+    <form id="db-form" style="display:grid;gap:14px">
+      <!-- Database Action Mode (New vs Existing) -->
+      <div style="background:#f9f8f4;border:1px solid #d8d8c8;border-radius:6px;padding:10px 14px">
+        <label style="display:block;font-size:12px;font-weight:600;margin-bottom:6px">Database Mode</label>
+        <div style="display:flex;gap:16px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;cursor:pointer">
+            <input type="radio" name="dbActionMode" value="new" id="db-mode-new" checked onchange="onDbModeChange()"> 🚀 Provision New Container
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;cursor:pointer">
+            <input type="radio" name="dbActionMode" value="existing" id="db-mode-existing" onchange="onDbModeChange()"> 🔗 Connect Existing Database
+          </label>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <label style="display:grid;gap:6px;font-size:12px;font-weight:600">
+          Database Engine
+          <select id="db-type-select" name="type" style="font:13px 'DM Mono',monospace;padding:10px;border:1px solid #adb3a5;border-radius:5px;background:#fff" onchange="onDbTypeChange()">
+            <option value="mysql">🐬 MySQL</option>
+            <option value="postgres">🐘 PostgreSQL</option>
+          </select>
+        </label>
+        <label id="db-version-label" style="display:grid;gap:6px;font-size:12px;font-weight:600">
+          Engine Version
+          <select id="db-version-select" name="version" style="font:13px 'DM Mono',monospace;padding:10px;border:1px solid #adb3a5;border-radius:5px;background:#fff">
+            <!-- Populated via JS: MySQL 5.7, 8, 9 | PostgreSQL 17, 18 -->
+          </select>
+        </label>
+        <label id="db-host-label" style="display:none;gap:6px;font-size:12px;font-weight:600">
+          Database Host / IP
+          <input name="dbHost" id="db-host-input" type="text" placeholder="192.168.1.167 or db.internal" style="font:13px 'DM Mono',monospace;padding:10px;border:1px solid #adb3a5;border-radius:5px">
+        </label>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <label style="display:grid;gap:6px;font-size:12px;font-weight:600">
+          Database Name
+          <input name="dbName" id="db-name-input" type="text" placeholder="app_db" style="font:13px 'DM Mono',monospace;padding:10px;border:1px solid #adb3a5;border-radius:5px">
+        </label>
+        <label style="display:grid;gap:6px;font-size:12px;font-weight:600">
+          Username
+          <input name="dbUser" id="db-user-input" type="text" placeholder="app_user" style="font:13px 'DM Mono',monospace;padding:10px;border:1px solid #adb3a5;border-radius:5px">
+        </label>
+      </div>
+
+      <div>
+        <label style="display:grid;gap:6px;font-size:12px;font-weight:600">
+          Password
+          <input name="dbPassword" id="db-pass-input" type="text" placeholder="secret_password" style="font:13px 'DM Mono',monospace;padding:10px;border:1px solid #adb3a5;border-radius:5px">
+        </label>
+      </div>
+
+      <div style="background:#f3f0e8;border:1px solid #c8c8b9;border-radius:6px;padding:12px;display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <strong style="font-size:13px">⚡ Auto-Inject Into Environment (.env)</strong>
+          <p style="font:11px 'DM Mono',monospace;color:#68716a;margin:2px 0 0">Automatically updates DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, DB_PASSWORD, &amp; DATABASE_URL</p>
+        </div>
+        <input type="checkbox" id="db-auto-inject" checked style="width:18px;height:18px;cursor:pointer">
+      </div>
+
+      <div class="modal-actions" style="margin-top:10px">
+        <button class="button ghost" id="close-db-btn" type="button">Cancel</button>
+        <button class="button" type="submit">Provision &amp; Save Database</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===================== ENVIRONMENT MANAGER MODAL ===================== -->
+<div id="env-modal" class="modal" hidden>
+  <div class="modal-card" style="max-width:680px;width:90%">
+    <div class="modal-head">
+      <div>
+        <p class="eyebrow">Configuration Store</p>
+        <h2 id="env-modal-title">🔑 Environment Variables (.env)</h2>
+      </div>
+      <button class="icon-button" id="close-env-modal" type="button" aria-label="Close">×</button>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <span style="font-size:12px;color:var(--text-muted)">Project workspace environment variables:</span>
+      <button type="button" class="button ghost" id="add-env-row-btn" style="padding:4px 10px;font-size:12px">+ Add Variable</button>
+    </div>
+
+    <div id="env-rows-container" style="display:grid;gap:10px;max-height:300px;overflow-y:auto;margin-bottom:16px"></div>
+
+    <div class="modal-actions">
+      <button class="button ghost" id="close-env-btn" type="button">Cancel</button>
+      <button class="button" id="save-env-btn" type="button">Save .env Variables</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== CI/CD BUILD STEPS MODAL ===================== -->
+<div id="cicd-modal" class="modal" hidden>
+  <div class="modal-card" style="max-width:680px;width:90%">
+    <div class="modal-head">
+      <div>
+        <p class="eyebrow">Pipeline &amp; Commands</p>
+        <h2 id="cicd-modal-title">⚙️ CI/CD Build Steps</h2>
+      </div>
+      <button class="icon-button" id="close-cicd-modal" type="button" aria-label="Close">×</button>
+    </div>
+
+    <section class="pipeline-guide">
+      <h3>Deployment pipeline</h3>
+      <div class="pipeline-steps"><span>① Source files / Git push</span><b>→</b><span>② Build queued</span><b>→</b><span>③ Worker / Docker build</span><b>→</b><span>④ Runtime check</span><b>→</b><span>⑤ Preview ready</span></div>
+      <p id="pipeline-current-state" role="status"></p><div id="pipeline-deployments"></div>
+      <p class="muted">Commands run at PHP container start. Auto-build on GitHub push requires a public webhook endpoint, matching branch, and configured signed webhook. Local/private LAN URLs cannot receive public webhooks directly.</p>
+      <div class="db-button-row"><button type="button" class="button ghost" id="pipeline-show-webhook">Configure GitHub webhook</button><button type="button" class="button ghost" id="pipeline-refresh">Refresh status</button></div>
+    </section>
+    <p style="font-size:12px;color:#68716a;margin-bottom:14px">Specify shell commands to run automatically inside your container during build &amp; startup (e.g. <code>composer install</code>, <code>php artisan migrate</code>, <code>npm run build</code>):</p>
+
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <button type="button" class="button ghost" style="padding:4px 10px;font-size:11px" onclick="addCicdPreset('php artisan migrate --force')">+ Add Migration</button>
+      <button type="button" class="button ghost" style="padding:4px 10px;font-size:11px" onclick="addCicdPreset('composer install --no-dev')">+ Add Composer</button>
+      <button type="button" class="button ghost" style="padding:4px 10px;font-size:11px" onclick="addCicdPreset('npm run build')">+ Add NPM Build</button>
+    </div>
+
+    <div id="cicd-steps-container" style="display:grid;gap:10px;max-height:300px;overflow-y:auto;margin-bottom:16px"></div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <button type="button" class="button ghost" id="add-cicd-step-btn" style="padding:6px 12px;font-size:12px">+ Add Custom Step</button>
+      <div class="modal-actions">
+        <button class="button ghost" id="close-cicd-btn" type="button">Cancel</button>
+        <button class="button" id="save-cicd-btn" type="button">Save Build Pipeline</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/portal-config.js"></script><script src="/frontend/app.js?v=5.1"></script>
+</body></html>
